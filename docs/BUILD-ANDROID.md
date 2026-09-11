@@ -1,60 +1,92 @@
-# Androidのビルド
+# Android APKの取得・ビルド・確認
 
-## 配布時の状態
+## 0.2.2の検証済み状態
 
-**この配布物にAPKはありません。Java/Gradleのソースは実装済みですが、Android SDKがない作成環境ではコンパイルとAndroid Lintを実行できませんでした。** 以下は実行用に用意した手順であり、ビルド成功の実測記録ではありません。Windows PowerShell経路もWindows実機では未検証です。
+**APKの生成・署名検査・Androidエミュレーターへのインストール・実行検証は完了しています。**
+最終PR検証は https://github.com/dj-thank/MorseTalk/actions/runs/34564521406 です。
+4ジョブすべて成功し、Androidでは9項目の実行検証とLint（0エラー・2警告）を確認しました。
+WindowsのPowerShellランチャーとローカルサーバーも実Windowsランナーで検証しています。
+物理的なWindows／Android端末のマイク・スピーカー間通信や実音声の認識品質は、別の未実施試験です。
 
-## 必要なもの
+Actionsの **MorseTalk-installable-debug-APK** 成果物ZIPに、次を含みます。
 
-Android Studio、SDK Platform 35、SDK Build-Tools 35.0.0、JDK 17以降。ビルド構成をAGP 8.9.2 / Gradle 8.11.1 / Java 17に固定しています。SDKのライセンスは開発者自身で確認・承諾してください。自動的に承諾するスクリプトはありません。
+- `android/app/build/outputs/apk/debug/app-debug.apk`
+- `test-results/android/APK-SHA256.txt` と署名検査結果
+- `test-results/source-commit.txt`
 
-`ANDROID_HOME`をSDKフォルダーに設定するか、`android/local.properties`に`sdk.dir`を設定します。Windowsでは通常のAndroid StudioのSDK/JBR位置も補助スクリプトが調べます。`local.properties`は他の端末と共有しません。
+上記最終PR実行のAPKのSHA-256:
+
+```text
+4e971bbce9bc8566d16a14feab3e70e8cd2f8a9f620cc39b04325ea60c49cad5
+```
+
+CI実行を変えるとデバッグ署名やAPKのハッシュが変わり得るため、必ず同じ実行の記録で照合してください。
+アプリはAndroid 8.0以上を対象とし、実行検証はAndroid 15 / API 35エミュレーターです。
+ストア配布用の製品版署名ではありません。モデル・AI推論ランタイムはAPKに含みません。
+
+## ソースからビルドするための環境
+
+SDK Platform 35、SDK Build-Tools 35.0.0、JDK 17、Gradle 8.11.1を使用します。
+Android Gradle Pluginは8.9.2です。SDK等のライセンスは開発者自身で確認してください。
+`ANDROID_HOME`をSDKフォルダーに設定するか、`android/local.properties`へ`sdk.dir`を指定します。
+`local.properties`には端末固有パスが入るため、リポジトリへ登録しません。
+
+Gradleが導入済みの場合:
+
+```sh
+cd android
+gradle --no-daemon assembleDebug assembleDebugAndroidTest lintDebug
+```
+
+アプリAPKは `android/app/build/outputs/apk/debug/app-debug.apk` へ出力されます。
+テストAPKは `android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk` です。
 
 ## 補助スクリプト
 
-Windowsは `Build-Android.cmd` を実行します。Python 3.10以降とPython Launcherが必要です。macOS / Linuxは次のとおりです。
+WindowsはPython 3.10以降とPython Launcherを用意し、`Build-Android.cmd`を実行します。
+macOS / Linuxは、自分のSDKとJDKのパスを指定して次を実行します。
 
 ```sh
-export ANDROID_HOME="$HOME/Android/Sdk"   # 自分のSDK位置に変更
-export JAVA_HOME="/path/to/jdk-17"       # 自分のJDK位置に変更
-./build-android.sh
-```
-
-Gradleが `.tools/` にない場合、実行確認後に公式の8.11.1バイナリーZIPと公式SHA-256サイドカーファイルをHTTPSで取得します。ハッシュを照合し、安全なパスだけ展開します。SDKやJavaのインストール、OS設定の変更、ストア公開、製品版署名はしません。
-
-Gradleプラグインなどの初回取得もオンラインです。これらは開発環境の取得であり、会話音声を送信する処理ではありません。
-
-```sh
+export ANDROID_HOME="$HOME/Android/Sdk"
+export JAVA_HOME="/path/to/jdk-17"
 python tools/build_android.py --task assembleDebug
 python tools/build_android.py --task lintDebug
 ```
 
-成功時の出力は `android/app/build/outputs/apk/debug/app-debug.apk` です。手元の実行でこのファイルが生成されたことを確認してから、端末へ移してください。
-
-## 既にGradleがある場合
-
-```sh
-cd android
-gradle --no-daemon assembleDebug lintDebug
-```
-
-**通常のGradle Wrapper JARはこのソース配布には含めていません。** 名前だけの偽の`gradlew`で代用はしていません。ローカルのGradleまたは補助スクリプトでWrapperを生成できます。
+Gradleが `.tools/` にない場合、補助スクリプトは確認後に公式ZIPとSHA-256ファイルをHTTPSで取得します。
+SDKやJavaの自動導入、OS設定変更、製品版署名やストア公開は行いません。
+初回のGradleプラグイン取得にはオンライン接続が必要です。会話音声の送信とは別の通信です。
+このソースはGradle Wrapper JARを同梱せず、必要なら次で生成します。
 
 ```sh
 python tools/build_android.py --task wrapper
-# 生成後、Android Studioで android/ を開いて同期する
 ```
 
-## インストールと最初の確認
+CIでは別途 `android-actions/setup-android` でSDKを用意し、署名検査、インストール、実行検証を自動化しています。
 
-自分でビルドしたデバッグAPKを端末に転送してインストール、または開発者向け設定とUSBデバッグを確認して`adb install -r .../app-debug.apk`を実行します。端末の全体的なセキュリティ機能を無効にする必要はありません。
+## インストールと初回確認
 
-0.2.0はAI Link画面で起動します。最初は「通信自己診断（AIなし）」とWAV保存を確認します。AI接続は `AI-SETUP.md` を参照してください。モデル／推論ランタイムはアプリに含みません。左上のMorseTalkリンクで旧翻訳画面へ移動できます。旧画面では文字「はい」を入力し、送信プレビューとWAVセルフテストを確認します。次にマイク権限を許可して受信を開始します。Android 12以降の対応端末ではオンデバイス音声認識の言語データとオフラインTTS音声を準備し、「声を文字に」で短く話します。権限の初回ダイアログなどで操作が停止した場合は、許可後にもう一度開始します。
+端末所有者がインストールを許可し、生成済みデバッグAPKを開きます。
+開発用USB接続を承認済みの場合は、次の方法も使えます。
 
-外部音声認識に切り替わる救済動作はありません。認識非対応端末でも文字入力・モールス変換を使えます。
+```sh
+adb install -r path/to/app-debug.apk
+```
 
-## 公開する前の必須ゲート
+既存版と署名が異なる場合、上書きインストールはできません。
+旧版の削除が必要になったときは、削除でローカル履歴が失われるため先に必要な履歴を書き出してください。
+端末全体のセキュリティ機能を無効にする必要はありません。
 
-`DEVICE-TEST-PLAN.md`のWindows/Android実機検証、Android Lint、権限拒否・通話割込み・ロック画面、APK内同梱資産、ネットワーク遮断下での音声認識を確認してください。
+0.2.2はAI Link画面で起動します。「通信自己診断（AIなし）」とWAV保存を最初に確認してください。
+AIとの会話にはモデルサーバーへの接続が必要です。`AI-SETUP.md`にPC上のAIをUSB経由で使う手順もあります。
+左上のMorseTalkリンクで旧翻訳画面へ移動でき、音声認識を使わず文字入力から試せます。
+マイク受信では初回の権限を確認し、ダイアログで操作が停止した場合は許可後にもう一度開始します。
+Android 12以降の対応端末で音声認識を使う場合は、オンデバイス言語データを別途用意します。
+非対応時にクラウド認識へ自動で切り替える実装ではありません。
 
-デバッグキーのAPKを製品版として配布しないでください。製品版キーは所有者自身で作成・保管し、リポジトリに秘密鍵やパスワードを入れないでください。この配布物には署名秘密鍵も自動公開設定もありません。
+## 製品版公開の前に残る確認
+
+`DEVICE-TEST-PLAN.md`に沿い、実機2台の距離・反響・雑音、権限拒否、通話割込み、画面ロック、実音声の認識と読み上げを確認してください。
+Lintの残り2警告はtarget API更新とAndroid 12以降のデータ抽出設定です。抑制して消してはいません。
+製品版キーは所有者自身で作成・保管し、秘密鍵やパスワードをリポジトリへ登録しないでください。
+今回のAPKを製品版署名済み・全実機動作保証済みとして配布しないでください。
