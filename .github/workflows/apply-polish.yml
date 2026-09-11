@@ -1,0 +1,58 @@
+name: Apply audited polish source once
+on:
+  push:
+    paths: ['.github/workflows/apply-polish.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/feat/gemma-polish-031'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate every source preimage and complete patch before applying
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,os,re,subprocess,urllib.request
+          from pathlib import Path
+          chunks=[]
+          for sha in ['fa62b7c152ff2315a9a4eb21924dc489a5d43de6','faefbf315e278b438ab0cdd4f04063700c6c4d16']:
+              req=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=30) as response: obj=json.load(response)
+              data=base64.b64decode(obj['content'])
+              assert len(data)==11224 and hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()==sha
+              chunks.append(data)
+          packed=b''.join(chunks)
+          assert len(packed)==22448 and hashlib.sha256(packed).hexdigest()=='d48bf28cafa70c6db17e3d5a288a7cd4c89708d9fed0f6162eaba24e341607ca'
+          dec=lzma.LZMADecompressor(memlimit=128*1024*1024)
+          raw=dec.decompress(packed,max_length=200000)
+          assert dec.eof and not dec.unused_data
+          assert len(raw)==77750 and hashlib.sha256(raw).hexdigest()=='9c918fcb1f78e8152d034f1624e6147a88d6bd060ff9b5811ab1af034f6fe391'
+          allowed={'.github/workflows/verification.yml','CHANGELOG.md','README.md','android/app/build.gradle','android/app/src/androidTest/java/jp/morsetalk/app/SmokeInstrumentation.java','android/app/src/main/java/jp/morsetalk/app/LocalGemma.kt','android/app/src/main/java/jp/morsetalk/app/MainActivity.java','app/ai.css','app/ai.html','app/core/fast-link.mjs','app/core/session-tools.mjs','app/js/ai-app.mjs','app/js/ai-experience.mjs','app/licenses.html','app/licenses/NOTICE.txt','docs/POLISH-0.3.1.md','package.json','scripts/build.mjs','tests/fast-link.test.mjs','tests/session-tools.test.mjs','tools/test_ai_ui.py'}
+          files={}
+          for block in raw.decode('utf-8').split('diff --git ')[1:]:
+              header=block.splitlines()[0]
+              match=re.fullmatch(r'a/(\S+) b/(\S+)',header)
+              assert match and match[1]==match[2] and match[1] in allowed
+              path=match[1]
+              assert path not in files and not Path(path).is_symlink()
+              index=re.search(r'^index ([0-9a-f]{40})\.\.([0-9a-f]{40})(?: 100644| 100755)?$',block,re.M)
+              assert index
+              before,after=index.groups()
+              if before=='0'*40: assert not Path(path).exists(),path
+              else:
+                  actual=subprocess.check_output(['git','hash-object','--',path],text=True).strip()
+                  assert actual==before,(path,actual,before)
+              files[path]=after
+          assert set(files)==allowed
+          subprocess.run(['git','apply','--check','--index','--unidiff-zero','-'],input=raw,check=True)
+          subprocess.run(['git','apply','--index','--unidiff-zero','-'],input=raw,check=True)
+          for path,after in files.items():
+              assert subprocess.check_output(['git','hash-object','--',path],text=True).strip()==after,path
+          subprocess.run(['git','-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','Polish Gemma setup, shared connection codes, private diagnostics and cancellation; test the exact distributable APK'],check=True)
+          subprocess.run(['git','push','origin','HEAD:feat/gemma-polish-031'],check=True)
+          print('Applied 21 files with preimage and result hashes checked. CI/runtime results are separate.')
+          PY
