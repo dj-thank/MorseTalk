@@ -41,6 +41,7 @@ export class SessionJournal {
     for (const key of ['seq','sender','attempt','bytes','inferenceMs','signalSeconds']) {
       if (Number.isFinite(event[key]) && event[key]>=0) item[key]=event[key];
     }
+    if(event.origin==='human-topic'||event.origin==='human-seed'||event.origin==='ai')item.origin=event.origin;
     for (const key of ['text','message']) if (typeof event[key]==='string') item[key]=event[key].slice(0,8192);
     if (item.kind==='delivered' && Number.isInteger(item.seq)) this.delivered.add(item.seq);
     if (item.kind==='peer' && Number.isInteger(item.seq)) this.received.add(item.seq);
@@ -52,7 +53,7 @@ export class SessionJournal {
   get elapsedMs() { return Math.max(0,(this.ended??this.clock())-this.started); }
   get turns() { return new Set([...this.delivered,...this.received]).size; }
   export(includeText=false) {
-    return {schema:'morsetalk-session-1', appVersion:'0.4.0', mode:this.mode, elapsedMs:this.elapsedMs,
+    return {schema:'morsetalk-session-1', appVersion:'0.5.0', mode:this.mode, elapsedMs:this.elapsedMs,
       completedTurns:this.turns, retries:this.retries, droppedEvents:this.dropped,
       containsConversation:includeText===true, physicalLinkVerified:false,
       note:'Execution log, not proof of physical acoustics. Endpoint configuration, consent, room and authentication token fields are not exported. Explicitly included conversation may contain private data.',

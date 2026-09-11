@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+- Add ten editable conversation topics and four complementary A/B conversation styles.
+- Add a visible single-device real-model / numeric-PCM trial entry point.
+- Queue one human topic at the next local turn via the existing Morse link, with explicit origin and cancellation.
+- Retry empty/repetitive/over-budget candidates once before sending; never truncate or substitute model output.
+- Bound exact recent history while preserving normal native cache-prefix reuse.
+- Add topic, steering, cancellation, privacy, UI and real-model multi-topic regression checks.
+
 ## 0.4.0
 - Offline QR creation/PNG export/camera scanning/image import with explicit preview and confirmation.
 - Two-party encrypted online Morse symbols, invite expiry, nonce proof, replay rejection and bounded relay.

@@ -40,7 +40,12 @@ async (config) => {
         if(e.kind==='frame') {
           event(side,{kind:'decoded',seq:e.frame.seq,type:e.frame.type,text:e.frame.text});
           links[side]?.receive(e.frame).catch(err=>{fatal=String(err);});
-        } else if(e.kind==='fatal'||e.kind==='error')event(side,e);
+        } else if(e.kind==='error') {
+          // The shipped UI reports a corrupt received packet but leaves the link
+          // alive for its bounded ARQ retry. Do not turn a recoverable DSP error
+          // into a harness-only session abort; retain it in the evidence.
+          event(side,{...e,kind:'decoder-error',recoverable:true});
+        } else if(e.kind==='fatal')event(side,e);
       });
       event(side,{kind:'audio-started',...actual});
     }
@@ -60,7 +65,7 @@ async (config) => {
         ? (messages,args)=>generateReply(messages,{...args,model:config.model,consent:true})
         : async messages=>'検証'+messages.filter(m=>m.role==='assistant').length+'。';
       agents.push(new MorseAgent({link,generate,maxTurns:4,maxReplyBytes:config.maxReplyBytes || 180,
-        goal:'防災用品を一つずつ提案する。日本語15文字以内の一文で、具体的な品名を答える。',onEvent:e=>event(side,e)}));
+        shareTopic:true,goal:'防災用品を一つずつ提案する。日本語15文字以内の一文で、具体的な品名を答える。',onEvent:e=>event(side,e)}));
     }
     const first=agents[0].start('地震への備えとして、何を用意しますか。');
     const deadline=performance.now()+(config.realAI?360000:60000);
@@ -81,7 +86,7 @@ async (config) => {
       const peer=received.find(e=>e.side!==message.side && e.seq===message.seq);
       if(!peer||peer.text!==message.text)throw Error('End-to-end text mismatch');
     }
-    result.turns=generated.map(e=>({side:e.side,seq:e.seq,text:e.text,inferenceMs:e.inferenceMs}));
+    result.turns=generated.map(e=>({side:e.side,seq:e.seq,text:e.text,origin:e.origin,inferenceMs:e.inferenceMs}));
     result.ok=true;
   } catch(e) {
     result.error=String(e);
@@ -93,6 +98,8 @@ async (config) => {
     AudioNode.prototype.connect=originalConnect;
     sinks.forEach(s=>s.stream.getTracks().forEach(t=>t.stop()));
     await Promise.all(contexts.map(c=>c.state==='closed'?null:c.close().catch(()=>{})));
+    result.decoderErrors=events.filter(e=>e.kind==='decoder-error').length;
+    result.retransmissions=events.filter(e=>e.kind==='transmit'&&e.attempt>0).length;
     result.elapsedMs=performance.now()-started;
     result.captureTracksEnded=captures.every(s=>s.getTracks().every(t=>t.readyState==='ended'));
   }

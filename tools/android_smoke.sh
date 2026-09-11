@@ -5,6 +5,7 @@ collect() {
   adb logcat -d > test-results/android/logcat.txt 2>&1 || true
   adb exec-out run-as jp.morsetalk.app cat files/smoke-result.json > test-results/android/smoke-result.json 2>/dev/null || true
   adb exec-out run-as jp.morsetalk.app cat files/smoke-ai.png > test-results/android/smoke-ai.png 2>/dev/null || true
+  adb exec-out run-as jp.morsetalk.app cat files/smoke-failure.png > test-results/android/smoke-failure.png 2>/dev/null || true
 }
 trap collect EXIT
 adb wait-for-device

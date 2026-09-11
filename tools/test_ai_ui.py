@@ -47,7 +47,7 @@ with sync_playwright() as p:
       window.aiCalls=[];window.savedFiles=[];window.slow=false;window.pendingAI=null;window.modelState={installed:false,loaded:false,busy:false,phase:'idle',description:'TEST DOUBLE · 未読込'};
       const reply=(id,ok,result,error)=>window.dispatchEvent(new CustomEvent('morsetalk-native-result',{detail:{id,ok,result,error}}));
       window.NativeBridge={request(raw){const d=JSON.parse(raw);
-        if(d.method==='aiChat'){aiCalls.push(d.params);if(window.slow){window.pendingAI=d.id;return;}setTimeout(()=>reply(d.id,true,{text:'TEST DOUBLE 応答。'}),1);}
+        if(d.method==='aiChat'){aiCalls.push(d.params);if(window.slow){window.pendingAI=d.id;return;}setTimeout(()=>reply(d.id,true,{text:'TEST DOUBLE 応答。'+aiCalls.length}),1);}
         else if(d.method==='aiCapabilities')reply(d.id,true,{native:true,provider:'ollama',endpoint:'http://127.0.0.1:11434/api/chat',model:'gemma4:e2b-it-qat'});
         else if(d.method==='localModelStatus')reply(d.id,true,{...window.modelState});
         else if(d.method==='saveFile'){savedFiles.push(d.params);reply(d.id,true,{});}
@@ -70,7 +70,7 @@ with sync_playwright() as p:
     native.locator('#provider').select_option('ollama');expect(native.locator('#model')).to_have_value('gemma4:e2b-it-qat');expect(native.locator('#model')).to_be_enabled();expect(native.locator('#local-model-controls')).to_be_hidden();passed('Explicit HTTP-provider selection restores editable controls without silent fallback')
     native.locator('#model').fill('named-test-double');native.locator('#consent').check();native.locator('#test-ai').click();expect(native.locator('#transcript')).to_contain_text('TEST DOUBLE 応答。');passed('AI client → native bridge → result event contract, using a named test double')
     native.locator('#ai-pair').click();expect(native.locator('#status')).to_contain_text('PCM仮想経路テストが終了',timeout=15000)
-    assert native.evaluate('aiCalls.length')==9 # one connection probe, eight bounded turns
+    assert native.evaluate('aiCalls.length')==8 # one connection probe, one explicit topic turn and seven AI turns
     assert native.locator('#transcript').inner_text().count('数値処理で復号')==8;passed('Eight-turn integrated UI + stub AI + real PCM Morse virtual conversation')
     expect(native.locator('#turn-count')).to_have_text('8 / 8');expect(native.locator('#retry-count')).to_have_text('0');passed('Completed turn and retry counters reflect delivered PCM dialogue, not generated-only guesses')
     native.locator('summary').filter(has_text='検証ログを保存').click();native.locator('#export-log').click();expect(native.locator('#export-log')).to_be_enabled()
@@ -98,3 +98,8 @@ with sync_playwright() as p:
     browser.close()
 (OUT/'v02-ui-results.json').write_text(json.dumps({'passed':len(checks),'checks':checks,'real_llm_tested':False,'physical_audio_tested':False},ensure_ascii=False,indent=2))
 print(f'{len(checks)} checks passed. Native AI is a test double, physical acoustic link untested.')
+
+# Additional conversation-specific UI cases, with independently labelled test doubles.
+if __name__ == '__main__':
+    import subprocess, sys
+    subprocess.run([sys.executable, str(ROOT/'tools/test_conversation_ui.py')], check=True)

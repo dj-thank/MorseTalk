@@ -8,10 +8,11 @@ import { hasNative, nativeCall, setAwake } from './voice.mjs';
 import { createExperience } from './ai-experience.mjs';
 import { createPairingUI } from './pairing-ui.mjs';
 import { OnlineTransport } from './online-transport.mjs';
+import { createConversationUI } from './conversation-ui.mjs';
 const $=id=>document.getElementById(id);
 let audio=null,agent=null,link=null,virtualAgents=[],busy=false,generation=0,testAbort=null,localImport=null;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-let pairingUI=null,network=null,scanning=false,manualTurn=false,manualSending=false;
+let conversationUI=null,pairingUI=null,network=null,scanning=false,manualTurn=false,manualSending=false;
 let experience=null,localState=null,localTimer=null,localRefresh=0,awake=false;
 function pollLocal(){
   if(localTimer||!hasNative()||document.hidden)return;
@@ -34,7 +35,7 @@ function options(){
   packFastFrame({room,session,sender,seq:1,text:'test'});
   if(!Number.isInteger(maxTurns)||maxTurns<2||maxTurns>32||!Number.isInteger(maxReplyBytes)||maxReplyBytes<32||maxReplyBytes>512)throw new Error('会話制限の数値を確認してください。');
   if(![120,300,600,1200].includes(wpm)||!Number.isFinite(volume)||volume<.03||volume>.35)throw new Error('速度・音量の設定が不正です。');
-  return {room,session,sender,wpm,volume,maxTurns,maxReplyBytes,frequency:4000,goal:$('goal').value};
+  return {room,session,sender,wpm,volume,maxTurns,maxReplyBytes,frequency:4000,goal:$('goal').value,style:conversationUI?.style()||'natural',shareTopic:true};
 }
 function aiOptions(){
   if(!$('consent').checked)throw new Error('会話文をAIに渡すことを許可してください。');
@@ -43,7 +44,7 @@ function aiOptions(){
 }
 function controls(){
   const running=Boolean(audio||network||scanning||virtualAgents.length||busy||localState?.busy);
-  experience?.lock(running);pairingUI?.lock(running);
+  experience?.lock(running);pairingUI?.lock(running);conversationUI?.refresh();
   $('manual-send').disabled=!link||!manualTurn||manualSending;
   $('manual-compose').hidden=$('dialogue-mode').value!=='manual';
   if(running)pollLocal();
@@ -70,10 +71,11 @@ function onLinkEvent(e){
   if(e.kind==='error'||e.kind==='invalid')entry('通信診断',e.message);
 }
 function agentEvents(label,opts){return e=>{
-  experience?.record({...e,sender:opts.sender});
+  experience?.record({...e,sender:opts.sender});conversationUI?.event(e);
   if(e.kind==='thinking')status(`${label} が応答を生成中…`);
+  if(e.kind==='repairing'){entry('送信前の再生成',`ターン ${e.seq} · ${e.reason}。文章はまだ送っていません。`);status('反復・空文・長さを検出。Gemmaが一度だけ生成し直しています…');}
   if(e.kind==='generated'){
-    entry(`${label} · ターン ${e.seq}`,e.text,'local');$('inference').textContent=`${(e.inferenceMs/1000).toFixed(2)} s`;
+    entry(e.origin==='human-seed'?`あなたの最初の話題 · ターン ${e.seq}`:e.origin==='human-topic'?`あなたの話題変更 · ターン ${e.seq}`:`${label} · ターン ${e.seq}`,e.text,'local');$('inference').textContent=`${(e.inferenceMs/1000).toFixed(2)} s`;
     const b=packFastFrame({...opts,sender:label.endsWith('B')?1:0,seq:e.seq,text:e.text});$('airtime').textContent=network?`${b.length} B · 音送信なし`:`${fastDuration(b,opts).toFixed(3)} s`;
   }
   if(e.kind==='peer')entry(`相手 · ターン ${e.seq}`,e.text,'peer');
@@ -161,6 +163,7 @@ async function exportWav(){
 }
 function handle(id,fn){$(id).addEventListener('click',()=>{Promise.resolve().then(fn).catch(e=>{status(e.message);entry('操作エラー',e.message);});});}
 experience=createExperience({options,changed:()=>{controls();status('接続設定を更新しました。相手にも同じ接続コードを適用してください。');},error:e=>{status(e.message);entry('操作エラー',e.message);}});
+conversationUI=createConversationUI({getAgent:()=>agent||virtualAgents[0]||null,isRunning:()=>Boolean(audio||network||scanning||virtualAgents.length||busy||localState?.busy),changed:()=>experience.refresh(),error:e=>status(e.message),runSingle:aiPair});
 handle('quick-stop',()=>stop());
 handle('listen',beginListening);handle('start',async()=>{if(agent){$('start').disabled=true;await agent.start($('topic').value);controls();}});handle('stop',()=>stop());handle('self-test',selfTest);handle('test-ai',testAI);handle('ai-pair',aiPair);handle('export-fast',exportWav);handle('clear',()=>{$('transcript').replaceChildren();experience.clear();});
 $('role').addEventListener('change',controls);

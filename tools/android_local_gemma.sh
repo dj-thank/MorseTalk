@@ -6,6 +6,7 @@ collect() {
   adb logcat -d > test-results/android-local/logcat.txt 2>&1 || true
   adb exec-out run-as jp.morsetalk.app cat files/smoke-result.json > test-results/android-local/smoke-result.json 2>/dev/null || true
   adb exec-out run-as jp.morsetalk.app cat files/smoke-ai.png > test-results/android-local/smoke-ai.png 2>/dev/null || true
+  adb exec-out run-as jp.morsetalk.app cat files/smoke-failure.png > test-results/android-local/smoke-failure.png 2>/dev/null || true
   adb shell dumpsys meminfo jp.morsetalk.app > test-results/android-local/memory-after-test.txt 2>&1 || true
 }
 trap collect EXIT
