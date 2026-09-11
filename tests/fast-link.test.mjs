@@ -23,7 +23,7 @@ test('AI A → real PCM Morse → decoder B → AI B → real PCM Morse → deco
  const {links,events}=pair({pcm:true});const aiEvents=[],calls=[0,0];
  const agents=links.map((link,i)=>new MorseAgent({link,maxTurns:6,generate:async()=>`端末${i?'B':'A'}応答${++calls[i]}。`,onEvent:e=>aiEvents.push({sender:i,...e})}));
  await agents[0].start('会話を開始');
- for(let i=0;i<100&&!aiEvents.some(e=>e.kind==='complete'&&e.sender===0);i++)await sleep(10);
+ for(let i=0;i<100&&agents.some(a=>a.active);i++)await sleep(10);
  assert.deepEqual(calls,[3,3]);assert.equal(events.filter(e=>e.kind==='receive').length,6);assert.equal(aiEvents.filter(e=>e.kind==='generated').length,6);assert.equal(agents[0].active,false);assert.equal(agents[1].active,false);agents.forEach(a=>a.stop());
 });
 test('AI error does not fabricate or silently truncate a reply',async()=>{const {links,events}=pair();const a=new MorseAgent({link:links[0],maxReplyBytes:32,generate:async()=> 'あ'.repeat(100)});await a.start('start');assert.equal(events.filter(e=>e.kind==='transmit').length,0);assert.equal(a.active,false);links[1].close();});

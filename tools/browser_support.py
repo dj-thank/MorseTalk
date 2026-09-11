@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 import threading
+import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from server import LocalServer
@@ -32,3 +33,16 @@ def served_browser(*, extra_args=()):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def wait_js(page, predicate: str, *, timeout_ms: int = 30000) -> None:
+    """Poll via the automation protocol without injecting eval into the CSP page.
+
+    The production CSP remains intact. Unlike wait_for_function, this helper
+    does not construct a function with eval in the page execution environment.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while not page.evaluate(predicate):
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f'Browser predicate did not succeed in {timeout_ms} ms: {predicate}')
+        page.wait_for_timeout(50)

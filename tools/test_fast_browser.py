@@ -2,7 +2,7 @@
 """Production getUserMedia + AudioWorklet; Chromium fake WAV capture, NOT real hardware."""
 import json
 import subprocess
-from browser_support import ROOT,OUT,served_browser
+from browser_support import ROOT,OUT,served_browser,wait_js
 from playwright.sync_api import expect
 checks=[]
 try:
@@ -28,7 +28,7 @@ fs.writeFileSync({json.dumps(str(wav))},new Uint8Array(pcmToWav(padded,a.sampleR
               document.body.append(button);
             }''',wpm)
             page.locator('#capture-proof').click()
-            page.wait_for_function('frames.length>0 || captureErrors.length>0',timeout=30000)
+            wait_js(page, '() => frames.length>0 || captureErrors.length>0', timeout_ms=30000)
             data=page.evaluate('({frames,captureErrors,info:captureInfo})')
             assert not data['captureErrors'],data
             assert data['frames'][0]['text']=='はい',data

@@ -63,7 +63,7 @@ try:
   cancelled=page.evaluate("""async()=>{const {AudioEngine}=await import('/js/audio.mjs');const a=new AudioEngine();let resolve; a.contextReady=()=>new Promise(r=>resolve=r);const play=a.play([{on:true,seconds:.1}]);await new Promise(r=>setTimeout(r,20));a.stopPlayback();resolve({});return await play;}""")
   assert cancelled is False;passed('Asynchronous pre-play cancellation regression')
   # Denied permission through a controlled browser API rejection.
-  page.evaluate("navigator.mediaDevices.getUserMedia=()=>Promise.reject(new DOMException('denied','NotAllowedError'))")
+  page.evaluate("() => { navigator.mediaDevices.getUserMedia=()=>Promise.reject(new DOMException('denied','NotAllowedError')); }")
   page.locator('#listen').click();expect(page.locator('#notice')).to_contain_text('マイクが許可されていません');expect(page.locator('#listen')).to_be_enabled();passed('Denied microphone permission has a recoverable UI state')
   assert not errors,errors;assert not external,external;passed('No page errors and no external network requests')
   # Source UI screenshots from real rendering, not a mockup.
