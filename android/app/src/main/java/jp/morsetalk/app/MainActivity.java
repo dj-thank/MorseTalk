@@ -100,7 +100,7 @@ public final class MainActivity extends Activity {
                 return assetResponse(request);
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                // Navigation is not needed. Also prevent local assets from changing bridge context.
+                // Only allow bundled app and display-only license destinations.
                 String url = request.getUrl().toString();
                 if (!displayPage(url)) return true;
                 if (!trustedPage(url)) {
@@ -116,15 +116,16 @@ public final class MainActivity extends Activity {
         web.setWebChromeClient(new WebChromeClient() {
             @Override public void onPermissionRequest(PermissionRequest request) {
                 ui.post(() -> {
-                    if (!foreground || !trusted(request.getOrigin()) || webPermission != null) { request.deny(); return; }
+                    if (!foreground || web == null || !trustedPage(web.getUrl()) || !trusted(request.getOrigin()) || webPermission != null) { request.deny(); return; }
                     boolean audio = false;
                     for (String resource : request.getResources()) if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) audio = true;
                     if (!audio) { request.deny(); return; }
+                    final String permissionPage = pageBase(web.getUrl());
                     webPermission = request;
                     requestMicrophone(() -> {
                         PermissionRequest pending = webPermission; webPermission = null;
                         if (pending != null) {
-                            if (foreground && hasMicrophone()) pending.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+                            if (foreground && web != null && permissionPage.equals(pageBase(web.getUrl())) && hasMicrophone()) pending.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
                             else pending.deny();
                         }
                     });
@@ -134,6 +135,7 @@ public final class MainActivity extends Activity {
                 if (webPermission == request) webPermission = null;
             }
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (!foreground || !trustedPage(view.getUrl())) { callback.onReceiveValue(null); return true; }
                 if (fileChooser != null) fileChooser.onReceiveValue(null);
                 fileChooser = callback;
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("audio/*");
@@ -298,11 +300,16 @@ public final class MainActivity extends Activity {
         return language;
     }
     private void reply(String id, JSONObject result, String error) {
-        if (destroyed || web == null) return;
+        // Native callbacks can finish after a navigation. Display-only assets do
+        // not receive responses, even when the original request was authorized.
+        if (destroyed || web == null || !trustedPage(web.getUrl())) return;
+        final String targetPage = pageBase(web.getUrl());
         try {
             JSONObject payload = new JSONObject().put("id", id).put("ok", error == null);
             if (error != null) payload.put("error", error); else payload.put("result", result == null ? new JSONObject() : result);
-            String script = "window.dispatchEvent(new CustomEvent('morsetalk-native-result',{detail:JSON.parse(" + JSONObject.quote(payload.toString()) + ")}));";
+            // evaluateJavascript is asynchronous: recheck the execution page in
+            // JavaScript too, rather than trusting only the earlier UI-thread URL.
+            String script = "if(location.href.split('#')[0]===" + JSONObject.quote(targetPage) + "){window.dispatchEvent(new CustomEvent('morsetalk-native-result',{detail:JSON.parse(" + JSONObject.quote(payload.toString()) + ")}));}";
             web.evaluateJavascript(script, null);
         } catch (JSONException ignored) { }
     }

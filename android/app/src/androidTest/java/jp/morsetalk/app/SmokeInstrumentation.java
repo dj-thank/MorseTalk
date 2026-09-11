@@ -70,14 +70,7 @@ public final class SmokeInstrumentation extends Instrumentation {
                 require("!document.querySelector('#listen').disabled && document.querySelector('#stop').disabled","Stop did not restore controls");
                 check("Live receiver stop restores controls",true);
             }
-            runOnMainSync(() -> web.loadUrl("https://appassets.androidplatform.net/licenses.html"));
-            waitJs("document.readyState==='complete' && document.body.textContent.includes('第三者ライセンス')",15000);
-            js("window.deniedBridge=true;window.addEventListener('morsetalk-native-result',()=>window.deniedBridge=false);NativeBridge.request(JSON.stringify({id:'c9999999999',method:'localModelStatus',params:{}}));true");
-            SystemClock.sleep(300);
-            require("window.deniedBridge===true", "Display-only licenses gained bridge access");
-            runOnMainSync(() -> web.loadUrl("https://appassets.androidplatform.net/licenses/Apache-2.0.txt"));
-            waitJs("document.readyState==='complete' && document.body.textContent.includes('Apache License')",15000);
-            check("Installed APK serves full license text without granting privileged bridge access",true);
+            checkLicenseIsolation();
             runOnMainSync(() -> web.loadUrl("https://appassets.androidplatform.net/index.html"));
             waitJs("document.readyState==='complete' && !!document.querySelector('#draft')",30000);
             check("Legacy voice/Morse page remains reachable",js("location.href"));
@@ -102,6 +95,34 @@ public final class SmokeInstrumentation extends Instrumentation {
         require("document.querySelector('#provider').value==='litert' && document.querySelector('#endpoint').disabled", "Android must default to on-device Gemma, not an HTTP server");
         check("Android defaults to local Gemma with no HTTP endpoint",true);
     }
+    private void checkLicenseIsolation() throws Exception {
+        // The old test also matched the license LINK on ai.html before navigation
+        // committed. Exact destination + document readiness avoids a false pass.
+        final java.lang.reflect.Method reply = MainActivity.class.getDeclaredMethod("reply",String.class,JSONObject.class,String.class);
+        reply.setAccessible(true);
+        for (int attempt=0; attempt<3; attempt++) {
+            runOnMainSync(() -> web.loadUrl("https://appassets.androidplatform.net/licenses.html"));
+            waitJs("location.href==='https://appassets.androidplatform.net/licenses.html' && document.readyState==='complete' && document.querySelector('h1')?.textContent==='第三者ライセンス'",15000);
+            js("window.licenseEvents=[];window.addEventListener('morsetalk-native-result',e=>licenseEvents.push(e.detail));NativeBridge.request(JSON.stringify({id:'c9999999999',method:'localModelStatus',params:{}}));true");
+            // Deliberately complete a late native callback while on the license
+            // document. This is a test-injected payload, NOT a real model reply.
+            runOnMainSync(() -> {
+                try {reply.invoke(activity,"c9999999998",new JSONObject().put("text","TEST ONLY late callback"),null);}
+                catch (Exception e) {throw new AssertionError(e);}
+            });
+            SystemClock.sleep(300);
+            require("location.pathname==='/licenses.html' && window.licenseEvents.length===0", "Display-only page received a native request result or late callback");
+            runOnMainSync(() -> web.loadUrl("https://appassets.androidplatform.net/ai.html"));
+            waitJs("location.href==='https://appassets.androidplatform.net/ai.html' && document.readyState==='complete' && !!document.querySelector('#local-model-status')",15000);
+            js("window.returnedBridge=null;(async()=>{const {nativeCall}=await import('https://appassets.androidplatform.net/js/voice.mjs');returnedBridge=await nativeCall('localModelStatus',{},5000);})();true");
+            waitJs("window.returnedBridge?.provider==='litert'",10000);
+        }
+        check("Three license roundtrips deny privileged requests and late callbacks; native bridge works after return",true);
+        runOnMainSync(() -> web.loadUrl("https://appassets.androidplatform.net/licenses/Apache-2.0.txt"));
+        waitJs("location.pathname==='/licenses/Apache-2.0.txt' && document.readyState==='complete' && document.body.textContent.includes('Apache License')",15000);
+        check("Installed APK serves the complete offline Apache license text",true);
+    }
+
     private void checkPolishedControls() throws Exception {
         for (String name : new String[]{LocalGemma.MODEL, "gemma-4-E2B-it (1).litertlm", "gemma-4-E2B-it(23).litertlm"})
             if (!LocalGemma.acceptsModelFilename(name)) throw new AssertionError("Valid filename rejected: " + name);
