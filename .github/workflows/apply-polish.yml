@@ -34,8 +34,7 @@ jobs:
           allowed={'.github/workflows/verification.yml','CHANGELOG.md','README.md','android/app/build.gradle','android/app/src/androidTest/java/jp/morsetalk/app/SmokeInstrumentation.java','android/app/src/main/java/jp/morsetalk/app/LocalGemma.kt','android/app/src/main/java/jp/morsetalk/app/MainActivity.java','app/ai.css','app/ai.html','app/core/fast-link.mjs','app/core/session-tools.mjs','app/js/ai-app.mjs','app/js/ai-experience.mjs','app/licenses.html','app/licenses/NOTICE.txt','docs/POLISH-0.3.1.md','package.json','scripts/build.mjs','tests/fast-link.test.mjs','tests/session-tools.test.mjs','tools/test_ai_ui.py'}
           files={}
           for block in raw.decode('utf-8').split('diff --git ')[1:]:
-              header=block.splitlines()[0]
-              match=re.fullmatch(r'a/(\S+) b/(\S+)',header)
+              match=re.fullmatch(r'a/(\S+) b/(\S+)',block.splitlines()[0])
               assert match and match[1]==match[2] and match[1] in allowed
               path=match[1]
               assert path not in files and not Path(path).is_symlink()
@@ -43,16 +42,17 @@ jobs:
               assert index
               before,after=index.groups()
               if before=='0'*40: assert not Path(path).exists(),path
-              else:
-                  actual=subprocess.check_output(['git','hash-object','--',path],text=True).strip()
-                  assert actual==before,(path,actual,before)
+              else: assert subprocess.check_output(['git','hash-object','--',path],text=True).strip()==before,path
               files[path]=after
           assert set(files)==allowed
           subprocess.run(['git','apply','--check','--index','--unidiff-zero','-'],input=raw,check=True)
           subprocess.run(['git','apply','--index','--unidiff-zero','-'],input=raw,check=True)
           for path,after in files.items():
               assert subprocess.check_output(['git','hash-object','--',path],text=True).strip()==after,path
-          subprocess.run(['git','-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','Polish Gemma setup, shared connection codes, private diagnostics and cancellation; test the exact distributable APK'],check=True)
+          # GITHUB_TOKEN has contents permission, not workflows permission.
+          # Leave the workflow unchanged; the authorized connector writes it separately.
+          subprocess.run(['git','restore','--source=HEAD','--staged','--worktree','.github/workflows/verification.yml'],check=True)
+          subprocess.run(['git','-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','Polish Gemma setup, shared connection codes, private diagnostics and cancellation'],check=True)
           subprocess.run(['git','push','origin','HEAD:feat/gemma-polish-031'],check=True)
-          print('Applied 21 files with preimage and result hashes checked. CI/runtime results are separate.')
+          print('Applied 20 ordinary source files; workflow will be set separately. No runtime success claim.')
           PY
