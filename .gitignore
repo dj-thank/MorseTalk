@@ -19,3 +19,5 @@ examples/*.wav
 test-results/
 verification/
 *.apk
+
+.models/

@@ -70,7 +70,7 @@ class AIService:
             raise ValueError('AI providerはollama / compatibleです。')
         default = 'http://127.0.0.1:11434/api/chat' if self.provider == 'ollama' else 'http://127.0.0.1:8080/v1/chat/completions'
         self.endpoint, self.remote = validate_endpoint(endpoint or os.environ.get('MORSETALK_AI_URL', default), allow_remote if allow_remote is not None else os.environ.get('MORSETALK_AI_ALLOW_REMOTE') == '1')
-        self.model = model if model is not None else os.environ.get('MORSETALK_AI_MODEL', '')
+        self.model = model if model is not None else os.environ.get('MORSETALK_AI_MODEL', 'gemma4:e2b-it-qat' if self.provider == 'ollama' else '')
         self.lock = threading.Lock()
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     def capabilities(self):

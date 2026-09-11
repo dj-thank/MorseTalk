@@ -59,11 +59,11 @@ async (config) => {
       const generate=config.realAI
         ? (messages,args)=>generateReply(messages,{...args,model:config.model,consent:true})
         : async messages=>'検証'+messages.filter(m=>m.role==='assistant').length+'。';
-      agents.push(new MorseAgent({link,generate,maxTurns:4,maxReplyBytes:512,
-        goal:'防災用品を一つずつ提案する。日本語の非常に短い一文で答える。',onEvent:e=>event(side,e)}));
+      agents.push(new MorseAgent({link,generate,maxTurns:4,maxReplyBytes:config.maxReplyBytes || 180,
+        goal:'防災用品を一つずつ提案する。日本語15文字以内の一文で、具体的な品名を答える。',onEvent:e=>event(side,e)}));
     }
     const first=agents[0].start('地震への備えとして、何を用意しますか。');
-    const deadline=performance.now()+(config.realAI?240000:60000);
+    const deadline=performance.now()+(config.realAI?360000:60000);
     while(agents.some(a=>a.active)) {
       if(fatal)throw Error(fatal);
       if(performance.now()>deadline)throw Error('Conversation deadline exceeded');
