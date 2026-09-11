@@ -6,7 +6,7 @@ import { FastAudio } from './fast-audio.mjs';
 import { aiCapabilities, generateReply } from './ai-client.mjs';
 import { hasNative, nativeCall, setAwake } from './voice.mjs';
 const $=id=>document.getElementById(id);
-let audio=null,agent=null,link=null,virtualAgents=[],busy=false,generation=0,testAbort=null;
+let audio=null,agent=null,link=null,virtualAgents=[],busy=false,generation=0,testAbort=null,localImport=null;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function status(text){$('status').textContent=text;}
 function entry(label,text,kind='event'){
@@ -150,10 +150,19 @@ async function refreshLocal(){
 }
 handle('import-model',async()=>{
   if(!hasNative())throw new Error('Androidアプリで使用してください。');
-  // The system picker pauses this Activity; it is not an AI inference operation.
-  $('import-model').disabled=true;
-  try{const c=await nativeCall('importModel',{},600000);$('local-model-status').textContent=c.description;}
-  finally{controls();}
+  if(localImport)throw new Error('モデルの選択・取り込みは開始済みです。');
+  // The picker pauses the Activity. Its return event starts the cancellable copy state.
+  const operation={epoch:null};localImport=operation;$('import-model').disabled=true;
+  try{
+    const c=await nativeCall('importModel',{},600000);
+    if(operation.epoch===null||operation.epoch===generation)$('local-model-status').textContent=c.description;
+  }catch(e){
+    if(operation.epoch===null||operation.epoch===generation){nativeCall('cancelAI',{},1000).catch(()=>{});throw e;}
+  }finally{
+    if(localImport===operation)localImport=null;
+    if(operation.epoch!==null&&operation.epoch===generation){busy=false;status('モデル取り込み処理が終了しました。');}
+    controls();
+  }
 });
 handle('load-model',async()=>{
   const cfg=aiOptions(),epoch=++generation;busy=true;controls();status('Gemma 4 E2Bを端末内で読み込み中…');
@@ -161,7 +170,16 @@ handle('load-model',async()=>{
   catch(e){nativeCall('cancelAI',{},1000).catch(()=>{});throw e;}
   finally{if(epoch===generation){busy=false;controls();}}
 });
-handle('unload-model',async()=>{await nativeCall('unloadModel',{},95000);await refreshLocal();});
+handle('unload-model',async()=>{
+  const epoch=++generation;busy=true;controls();status('モデルを解放しています…');
+  try{await nativeCall('unloadModel',{},95000);if(epoch===generation){await refreshLocal();status('モデルをメモリから解放しました。');}}
+  catch(e){if(epoch===generation){nativeCall('cancelAI',{},1000).catch(()=>{});throw e;}}
+  finally{if(epoch===generation){busy=false;controls();}}
+});
+addEventListener('morsetalk-local-import-start',()=>{
+  if(!localImport||localImport.epoch!==null)return;
+  localImport.epoch=++generation;busy=true;controls();status('モデルを端末内に取り込み中…「すべて停止」で中断できます。');
+});
 addEventListener('morsetalk-local-model',()=>{refreshLocal().catch(()=>{});});
 addEventListener('pagehide',()=>stop('画面を離れたため停止しました。'));
 addEventListener('morsetalk-native-pause',()=>stop('画面を離れたため停止しました。'));

@@ -247,10 +247,12 @@ public final class MainActivity extends Activity {
                             aiId = id; break;
                         }
                         case "unloadModel": {
-                            if (aiId != null) throw new IllegalStateException("先にAIを停止してください。");
+                            if (!foreground || aiId != null) throw new IllegalStateException("先にAIを停止してください。");
                             final String requestId = id;
-                            localGemma.unload((result, error) -> ui.post(() -> reply(requestId, result, error)));
-                            break;
+                            localGemma.unload((result, error) -> ui.post(() -> {
+                                if (requestId.equals(aiId)) { aiId = null; reply(requestId, result, error); }
+                            }));
+                            aiId = id; break;
                         }
                         case "cancelAI": cancelAI(); reply(id, new JSONObject(), null); break;
                         default: reply(id, null, "未対応の操作です。");
@@ -394,6 +396,7 @@ public final class MainActivity extends Activity {
                     if (!destroyed && web != null) web.evaluateJavascript("window.dispatchEvent(new Event('morsetalk-local-model'));", null);
                 }));
                 aiId = id;
+                web.evaluateJavascript("window.dispatchEvent(new Event('morsetalk-local-import-start'));", null);
             } catch (Exception ex) { reply(id, null, ex.getMessage()); }
         } else if (requestCode == OPEN_FILE && fileChooser != null) {
             fileChooser.onReceiveValue(resultCode == RESULT_OK && data != null && data.getData() != null ? new Uri[]{data.getData()} : null); fileChooser = null;

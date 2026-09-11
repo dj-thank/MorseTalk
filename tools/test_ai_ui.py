@@ -39,7 +39,11 @@ with sync_playwright() as p:
         else if(d.method==='aiCapabilities')reply(d.id,true,{native:true,provider:'ollama',endpoint:'http://127.0.0.1:11434/api/chat',model:'gemma4:e2b-it-qat'});
         else if(d.method==='localModelStatus')reply(d.id,true,{installed:false,loaded:false,description:'TEST DOUBLE · 未読込'});
         else if(d.method==='loadModel')reply(d.id,true,{loaded:true,description:'TEST DOUBLE · 読込済み'});
-        else if(d.method==='unloadModel')reply(d.id,true,{loaded:false});
+        else if(d.method==='unloadModel'){if(window.slow){window.pendingAI=d.id;return;}reply(d.id,true,{loaded:false});}
+        else if(d.method==='importModel'){
+          window.dispatchEvent(new Event('morsetalk-native-pause'));window.pendingAI=d.id;
+          setTimeout(()=>window.dispatchEvent(new Event('morsetalk-local-import-start')),20);
+        }
         else if(d.method==='cancelAI'){if(window.pendingAI){reply(window.pendingAI,false,null,'TEST CANCEL');window.pendingAI=null;}reply(d.id,true,{});}
         else reply(d.id,true,{});
       }};
@@ -48,6 +52,8 @@ with sync_playwright() as p:
     native.locator('#provider').select_option('litert');expect(native.locator('#local-model-controls')).to_be_visible();expect(native.locator('#model')).to_have_value('gemma-4-E2B-it.litertlm');expect(native.locator('#model')).to_be_disabled();expect(native.locator('#endpoint')).to_be_disabled();passed('On-device Gemma locks model and endpoint; exposes import and CPU/GPU controls')
     native.locator('#load-model').click();expect(native.locator('#status')).to_contain_text('許可');assert native.evaluate('aiCalls.length')==0;passed('Local model loading requires explicit processing consent')
     native.locator('#consent').check();native.locator('#load-model').click();expect(native.locator('#status')).to_contain_text('モデル読み込み完了');passed('Local preload bridge contract (test double only)')
+    native.locator('#import-model').click();expect(native.locator('#stop')).to_be_enabled();expect(native.locator('#import-model')).to_be_disabled();expect(native.locator('#provider')).to_be_disabled();native.locator('#stop').click();expect(native.locator('#listen')).to_be_enabled();expect(native.locator('#status')).to_contain_text('停止');passed('Model picker return enters cancellable copy state; stop restores controls without late-state overwrite')
+    native.evaluate('window.slow=true');native.locator('#unload-model').click();expect(native.locator('#stop')).to_be_enabled();expect(native.locator('#provider')).to_be_disabled();native.locator('#stop').click();expect(native.locator('#listen')).to_be_enabled();expect(native.locator('#status')).to_contain_text('停止');native.evaluate('window.slow=false');passed('Pending native unload has a bounded cancellation contract and exclusive UI state')
     native.locator('#provider').select_option('ollama');expect(native.locator('#model')).to_have_value('gemma4:e2b-it-qat');expect(native.locator('#model')).to_be_enabled();expect(native.locator('#local-model-controls')).to_be_hidden();passed('Explicit HTTP-provider selection restores editable controls without silent fallback')
     native.locator('#model').fill('named-test-double');native.locator('#consent').check();native.locator('#test-ai').click();expect(native.locator('#transcript')).to_contain_text('TEST DOUBLE 応答。');passed('AI client → native bridge → result event contract, using a named test double')
     native.locator('#ai-pair').click();expect(native.locator('#status')).to_contain_text('PCM仮想経路テストが終了',timeout=15000)

@@ -1,3 +1,10 @@
+# 0.3.0 Gemma 4 E2B 更新
+
+Androidは端末内LiteRT-LM、WindowsはOllama gemma4:e2b-it-qatです。現在の導入・ビルド手順は `docs/GEMMA4-E2B.md` を参照してください。
+以下は0.2.2の過去の記録です。古いモデル・実行番号・APKハッシュをGemma版に適用しないでください。
+
+---
+
 # MorseTalk 0.2.2
 
 Windows / Android 向けの音声 ↔ モールス、および **AI ↔ 音響モールス ↔ AI** アプリです。

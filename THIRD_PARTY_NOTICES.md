@@ -27,3 +27,6 @@ Character code assignments and timing conventions are used for interoperability.
 ## Optional AI server and model
 
 Ollama and llama.cpp are optional, separately installed backends. Their executables, source and model weights are not bundled here. The user selects an already installed model and must verify that model's license and resource requirements independently. This app's MIT license does not grant rights in any chosen model. No model download, API purchase, API key, proprietary font file or third-party JS runtime is included. See docs/AI-SETUP.md for the primary API documentation used.
+
+## 0.3.0 runtime
+APK includes unmodified LiteRT-LM0.17.0 and Kotlin/coroutines dependencies (Apache-2.0). License text and attribution are in assets/licenses. Model weights are not bundled. Other upstream native dependencies retain their respective terms; a complete source-level native audit is not claimed.
