@@ -9,3 +9,6 @@
 
 /* QR pair flow: bounded canvas/video, no camera until user action. */
 .pairing-network{margin:20px 0}.pairing-network canvas,.pairing-network video{display:block;max-width:100%;width:360px;height:auto;margin:14px auto;background:#fff}.pairing-network video{background:#151e28}.pairing-network textarea{overflow-wrap:anywhere;word-break:break-all}.file-button{display:block;border:1px solid #9ba9b6;border-radius:10px;padding:10px;font-size:14px;max-width:100%}.file-button input{font-size:12px;max-width:100%;padding:8px 0}#qr-output,#qr-camera{margin:12px 0;padding:10px;border:1px solid #c8d1da;border-radius:12px}#manual-compose{margin:14px 0}[hidden]{display:none!important}
+
+/* Reserve the camera slot before metadata arrives so the stop button never jumps. */
+#qr-video{aspect-ratio:16/9;width:100%;height:auto;object-fit:contain}

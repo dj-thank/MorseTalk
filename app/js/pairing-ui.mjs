@@ -16,8 +16,11 @@ export class QRScanner {
   constructor({video,onResult,onError,onBusy}) { Object.assign(this,{video,onResult,onError,onBusy});this.epoch=0;this.active=false; }
   stop() {
     ++this.epoch;clearTimeout(this.timer);this.timer=null;
-    const stream=this.stream;this.stream=null;stream?.getTracks().forEach(t=>t.stop());
-    this.video.pause();this.video.srcObject=null;
+    const stream=this.stream;this.stream=null;
+    // Release every track even when a device has already disappeared.
+    for(const track of stream?.getTracks()||[]){track.onended=null;try{track.stop();}catch{}}
+    try{this.video.pause();}catch{}
+    try{this.video.srcObject=null;}catch{}
     if(this.active){this.active=false;this.onBusy(false);}
   }
   read(source) {
@@ -36,7 +39,12 @@ export class QRScanner {
       if(!navigator.mediaDevices?.getUserMedia)throw Error('カメラを利用できません。QR画像または接続コードを使ってください。');
       const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
       if(epoch!==this.epoch){stream.getTracks().forEach(t=>t.stop());return;}
-      this.stream=stream;this.video.srcObject=stream;await this.video.play();
+      this.stream=stream;
+      for(const track of stream.getTracks())track.onended=()=>{
+        if(epoch!==this.epoch)return;
+        this.stop();this.onError(Error('カメラが切断されました。再度開始するか、QR画像を使ってください。'));
+      };
+      this.video.srcObject=stream;await this.video.play();
       if(epoch!==this.epoch)return;
       const scan=()=>{
         if(epoch!==this.epoch)return;
