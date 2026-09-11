@@ -1,123 +1,82 @@
-# 0.5.0: いろいろな話題でGemma同士が会話
+# MorseTalk 0.5.1 — PCとAndroidで、モールス会話
 
-導入済みのGemma 4 E2Bを維持し、10話題・4スタイル・会話途中の話題予約を追加しました。操作と検証範囲は `docs/CONVERSATION-0.5.0.md` を参照してください。公開オンライン中継は別途必要です。
+Gemma 4 E2B同士、または人とAIがモールスで話すWindows / Androidアプリです。
+PC↔Android・PC↔PC・Android↔Androidで同じ通信形式を使い、各端末を手入力またはAI自動応答にできます。
+通常の音声↔モールス、和文・欧文の翻訳画面も残しています。
 
-# MorseTalk 0.4.0 — QRペアリング・オンライン交信
+## 接続方法
 
-QR表示／PNG保存／アプリ内カメラ／画像読み込みに対応。オンラインは暗号化したモールス符号列を2台間で中継し、手入力と既存のGemma 4 E2B自動会話を選べます。
+| 方法 | 使い方 | 前提 |
+|---|---|---|
+| 音響 | モールス音をスピーカーから相手のマイクへ | 近距離。まず120 WPM。物理端末の距離/反響は未検証 |
+| USB | PCのローカル中継経由で暗号化モールス符号をAndroidへ | 所有者承認済みUSBデバッグ、ADB。公開サーバー不要 |
+| オンライン | WSS中継経由で暗号化モールス符号を送る | 管理者が設置した中継先。常設公開サービスは未設置 |
 
-**公開中継サーバーは未設置です。オンラインには利用者のWSS接続先が必要です。** 接続方法・Docker＋Caddy構成・暗号化範囲は `docs/QR-ONLINE.md`。既存の音響モールスと端末内Gemmaは維持しています。
+USB/オンラインは音声配信ではなく、点・線の符号データを運びます。マイクも音の再生時間待ちもありません。
+QRはアプリ内カメラ・PNG読込・招待文で共有でき、読み取り内容を確認してから設定を適用します。
 
-以下は前版の記録です。過去のテスト件数・APKハッシュを本版へ適用しないでください。
+## Android
 
----
+GitHub Actionsの成功した実行から `MorseTalk-installable-debug-APK` 成果物を取得します。
+ZIP内 `android/app/build/outputs/apk/debug/app-debug.apk` がアプリ本体です。テストAPKは通常の利用には不要です。
+AIには別途 `gemma-4-E2B-it.litertlm` を取り込み、CPU→AI処理の許可→先読み→AI接続テストの順で準備します。
+モデル本体約2.59GBはAPKに含まず、元ファイルとアプリ専用コピーの両方を置く空き容量が必要です。
+手入力と通信自己診断にはモデルは不要です。端末内推論の導入は [Gemmaガイド](docs/GEMMA4-E2B.md) を参照してください。
+APKはデバッグ署名です。旧版と署名が違って削除が必要な場合、モデル・履歴も消えるため先に保存してください。
 
-# MorseTalk 0.3.1
+## Windows
 
-Gemma 4 E2Bの端末内推論を維持し、準備案内・取り込み進捗・接続コード・常に押せる停止・診断ログを追加しました。使い方と検証範囲は `docs/POLISH-0.3.1.md`、モデル導入は `docs/GEMMA4-E2B.md` を参照してください。
+Python 3.10以降とPython Launcherを用意し、`Start-AI-Windows.cmd` を開きます。
+AIにはローカルOllama `gemma4:e2b-it-qat` が必要です。設定・モデル取得は明示操作で行い、アプリは別モデルやクラウドへ自動切替しません。
+従来の翻訳画面は `Start-Windows.cmd` です。起動コンソールを閉じるとサーバーも停止します。
 
----
+## PC↔AndroidをUSBで試す
 
-# 0.3.0 Gemma 4 E2B 更新
+PCにADBを追加し、信頼する自分のPCへのUSBデバッグ接続をAndroidで承認してください。
+USBケーブルだけで無設定につながる方式ではなく、開発用ADB接続を使います。
 
-Androidは端末内LiteRT-LM、WindowsはOllama gemma4:e2b-it-qatです。現在の導入・ビルド手順は `docs/GEMMA4-E2B.md` を参照してください。
-以下は0.2.2の過去の記録です。古いモデル・実行番号・APKハッシュをGemma版に適用しないでください。
+```powershell
+py -3 -m pip install -r relay/requirements.txt
+adb devices
+.\Start-PC-Android.cmd
+```
 
----
+両端の画面で「パソコンとAndroidで話す」→「USBの接続先を設定」。
+Aで招待作成→BがQR等で読み取り確認→両端でネット交信を許可→B待機→A待機→A開始です。
+各端末でAIまたは手入力を選びます。AI側だけモデルとAI処理の許可が必要です。
+終了はCtrl+C。自分で作った中継と転送だけを閉じ、既存転送・LAN/ファイアウォール・信頼設定は変更しません。
+詳細・複数端末やポート指定は [PC/Androidガイド](docs/PC-ANDROID-0.5.1.md)。
 
-# MorseTalk 0.2.2
+## AI同士のおしゃべり
 
-Windows / Android 向けの音声 ↔ モールス、および **AI ↔ 音響モールス ↔ AI** アプリです。
-MT2 は UTF-8 を可逆圧縮・CRC付きで欧文モールスへ変換する機械間モードです。
-通常の和文・欧文モールスを使う翻訳画面も残しています。
+日常・音楽・料理・旅・科学・AI・語学・ゲーム・創作・哲学の10話題と4スタイルを選び、自由入力や途中の話題変更も使えます。
+最初の話題もモールスで相手へ届き、以後は相手の発言を受けてGemmaが応答します。
+既定8ターンには最初の人間の話題共有を含みます。AI発言は7回です。1台試用は最大8ターンの数値PCM処理、2台交信は最大32ターンです。
+通信が正確でもモデルの創作・会話品質が常に良いとは保証しません。反復・空文・言語混入などは同じモデルで一度だけ修正し、再検査に失敗すれば停止します。
 
-## Androidで起動
+## 検証済みの範囲
 
-GitHub Actions の **MorseTalk build and real verification** → **MorseTalk-installable-debug-APK** を取得してください。
-ZIP内の `android/app/build/outputs/apk/debug/app-debug.apk` がインストール対象です。
-同梱のSHA-256と `source-commit.txt` で対象ソースを照合できます。
+[最終PR実行](https://github.com/dj-thank/MorseTalk/actions/runs/34636425983) は6ジョブ成功。
+Node416 / Python71、画面111項目、同じAPKのAndroid通常/端末内Gemma各22項目、Windowsブラウザ、PC↔Android直接交信4ケース、実Gemmaの14会話条件を確認しました。
+さらに [追加実験](https://github.com/dj-thank/MorseTalk/actions/runs/34636882308) で、PCのOllamaとAndroid内LiteRT-LMを別々に動かす交信も成功しました。
+直接交信はLinuxブラウザとAndroid15エミュレーターです。Windows実行は別途検証しています。追加実験のAPKは同一アプリコードの別署名ビルドで、配布APKとの違いも記録しています。
+[検証記録とAPKの出所](docs/PC-ANDROID-VERIFICATION-0.5.1.md) に成功・途中の失敗・全実測・制限を分けて記載しています。
 
-Android 8.0以上を対象とするデバッグ署名APKです。CIでの実行検証環境はAndroid 15（API 35）のエミュレーターです。
-異なるCI実行のAPKはデバッグ署名鍵が異なる場合があり、その場合は上書きインストールできません。
-アンインストールするとローカル履歴が失われるため、必要な履歴は先に書き出してください。
-本番配布用の署名鍵・ストア公開設定は含みません。
-
-**AIモデル・AIサーバーはAPKに同梱していません。**
-文字からモールスへの変換と通信自己診断はAIなしで使えます。
-AI自動会話は、明示的に接続したOllama / Chat Completions互換サーバーを利用します。
-Android単体でモデルランタイムを自動インストールする機能はありません。
-PC上のモデルを使う開発用接続は `docs/AI-SETUP.md` を参照してください。
-
-## Windowsで起動
-
-Python 3.10以降を用意し、`Start-AI-Windows.cmd` を実行します。
-従来の音声・モールス翻訳画面は `Start-Windows.cmd` です。
-起動コンソールを閉じるとローカルサーバーが停止します。
-AI会話には導入済みのモデルが必要です。モデル名を入力し、AIへ会話文を送る許可を確認して「AI接続テスト」を押してください。
-
-既定のAI接続先は `http://127.0.0.1:11434/api/chat`。
-変更する場合は、起動前に以下の環境変数を設定します。
-
-- `MORSETALK_AI_PROVIDER`: `ollama` または `compatible`
-- `MORSETALK_AI_URL`: AIサーバーのチャットAPI URL
-- `MORSETALK_AI_MODEL`: 導入済みモデル名
-
-外部AIへの送信は既定では無効です。設定とセキュリティ上の注意は `docs/AI-SETUP.md` に記載しています。
-
-## 2台で会話
-
-両端で通信コード、セッション、速度、周波数を一致させ、片方をA・もう片方をBにします。
-Bを受信待機 → Aを受信待機 → Aから会話開始、の順で操作します。
-自分の送信中は復号をミュートし、応答は交互に送ります。
-120 WPMから確認し、受信が安定した場合に速度を上げてください。1,200 WPMは実験用です。
-
-文章の端末間配送は音響経路です。各端末とAIサーバーとの接続は別です。
-同じAIサーバーを2端末から使う構成では、そのAIサーバーは両方の入力を受け取ります。
-
-## 再現可能な検証
-
-```bash
+```sh
 node scripts/build.mjs
 node --test tests/*.test.mjs
+python -m pip install -r relay/requirements.txt
 python -m unittest discover -s tests -p 'test_*.py' -v
 docker build -t morsetalk-test .
 docker run --rm morsetalk-test
 ```
 
-実際のChromium、WAV入力の仮想マイク、AudioWorklet:
+ブラウザ等の再現は `.github/workflows/verification.yml` と各 `tools/test_*.py` を参照してください。
+AndroidビルドはJDK17 / SDK35 / Gradle8.11.1 / AGP8.9.2 / Kotlin2.4.10 / LiteRT-LM0.17.0です。
 
-```bash
-python -m pip install playwright==1.57.0
-python -m playwright install --with-deps chromium
-python tools/test_ui.py
-python tools/test_fast_browser.py
-```
+## 未実施・注意
 
-実LLMと実時間の音声描画経路（物理的な空気中通信ではありません）:
-
-```bash
-export MORSETALK_AI_MODEL=qwen2.5:0.5b
-bash tools/start_ci_model.sh
-python tools/test_real_ai.py
-docker rm -f morsetalk-ollama
-```
-
-モデル取得に失敗した場合は最大3回再試行し、全失敗時は検証を失敗させます。
-代替応答で成功扱いにはしません。モデル本体やDockerイメージは実行時に取得します。
-`tools/test_audio_pair.py` は同じ実時間音声経路に明示的なAIテストダブルを使う、別の制御テストです。
-
-Androidをソースからビルドする場合はJDK17 / Android SDK35 / Gradle8.11.1を用意し、
-`cd android && gradle assembleDebug assembleDebugAndroidTest` を実行します。
-`tools/android_smoke.sh` は起動済みエミュレーターにAPKをインストールし、実際のWebView、
-AudioWorklet、Java→実LLM接続、受信開始・停止を検証します。
-Windowsランチャーの検証は `windows/smoke-test.ps1` です。
-
-## 検証範囲と限界
-
-検証記録は `docs/VERIFICATION-2026-09-11.md` と各Actionsの成果物を参照してください。
-実機2台の室内スピーカー・マイク間通信、実機音声認識・読み上げ品質は未検証です。
-120〜1,200 WPMは符号速度であり、AI推論・ACK・再送を含む会話速度の保証ではありません。
-MT1とMT2は別方式です。通信コードとCRCは暗号化・認証ではありません。
-秘密情報や確実な到達を要する緊急通信には使わないでください。
-
-アプリソースはMITライセンス。モデル・SDK等は `THIRD_PARTY_NOTICES.md` を参照してください。
+物理Windows↔スマートフォン、USB抜差し、空気中通信の距離・反響・雑音、公開WSS疎通、実機QR、GPU/Pixel9a、実ASR/TTS品質は未検証です。
+オンラインの常設中継、ストア配布署名、モデル重みの同梱はありません。画面非表示や相手切断で停止し、自動再接続しません。
+招待QRに秘密鍵が入るため相手だけに渡します。暗号化の第三者監査や実名認証は未実施で、高機密情報・緊急用途には使わないでください。
+ソースはMIT、モデル/SDK等の条件は [第三者ライセンス](THIRD_PARTY_NOTICES.md) を参照してください。
