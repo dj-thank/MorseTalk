@@ -1,29 +1,82 @@
-# 2026-09-11 検証記録
+# 2026-09-11 実行検証記録
 
-## このコンテナで実行済み
+## 全4ジョブが成功した基準実行
 
-- 元の配布ソース: Node 287/287、Python 36/36、AI画面15項目が成功。
-- Workletの依存モジュールを代替せず、TextEncoder/TextDecoder/DOMを与えずにバンドルを読み込むと、旧版は `ReferenceError: TextEncoder is not defined`。
-- `app/core/utf8.mjs` を追加し、Worklet内のDOM符号化API依存を除去。
-- 不正UTF-8拒否、Unicodeの可逆性、先頭BOM保持、4速度の完全Workletバンドル復号を含む新規33件を追加。
-- 修正後: Node 320/320、Python 36/36が成功。
+- GitHub Actions: https://github.com/dj-thank/MorseTalk/actions/runs/34563978552
+- 検証ソース: `1126a298056db3f14867ce0c3e69394d584ca7e3`
+- ジョブ: `core-browser` / `windows` / `real-ai-audio` / `android`、すべて成功。
+- 以後の表示・文書修正の実行結果は、それぞれのActions実行と `source-commit.txt` で区別する。
 
-このコンテナではネットワークDNSを利用できず、Android SDKも存在しない。
-管理下ChromiumはループバックURLを `ERR_BLOCKED_BY_ADMINISTRATOR` として拒否した。
-これらを回避せず、実ブラウザマイクAPI・APK・エミュレーター・実LLM試験は
-標準GitHub hosted runnerで実行するワークフローを追加した。
+## 結果と、何を意味するか
 
-## 追加した実行検証（結果は対応するActions runを参照）
+| 検証 | 確認できた結果 | 実機との区別 |
+|---|---|---|
+| Docker | Node 320件、Python 36件合格 | Linuxコンテナ内のソフトウェア試験 |
+| 画面操作 | AI画面15項目、旧翻訳画面23項目、実ブラウザ統合26項目合格 | 音声認識応答の一部は明示的なテストダブル |
+| 高速受信 | 120 / 300 / 600 / 1,200 WPMの全4速度で「はい」を復号、停止後にマイク解放 | Chromiumの合成WAV入力、実getUserMediaとAudioWorklet、44.1 kHz |
+| 自動会話制御 | 4ターン、正確な本文復元と受信確認 | この制御テストのAI応答は固定テストダブル |
+| 実AI自動会話 | 実LLMによる4ターン、本文一致4件、ACK4件、再送0件 | 音響端点のみ仮想ケーブル、実時間WebAudio・本番AudioWorkletで処理 |
+| Windows | PowerShellランチャー、ローカルHTTP、APIトークン検査成功 | GitHubの実Windowsランナー。物理マイク／スピーカーは未検証 |
+| Android | APKビルド・署名検査・インストール・9項目の実行検証・Lint成功 | Android 15 / API 35エミュレーター |
 
-1. Docker内の全コア・サーバーテスト。
-2. 通常ChromiumのgetUserMedia → 実AudioWorklet。入力は合成WAV、物理マイクではない。
-3. Ollama実モデルを2役に使用し、4ターンを実時間WebAudio → 相手のWorkletで復号。
-4. Windows PowerShell 5.1で起動・トークン・ローカルHTTP動作。
-5. Android assembleDebug / assembleDebugAndroidTest / lintDebug、APK署名検証。
-6. Android 35エミュレーターへのAPKインストール、アプリ起動、実WebView、Worklet読込、Java→実AI接続、受信開始停止。
+## 実AIの4ターン測定
 
-## 未実施を成功扱いしない
+Ollama `0.6.8`、モデル `qwen2.5:0.5b`、Dockerを2 CPU / 3 GiBに制限。
+モデル識別子: `a8b0c51577010a279d933d14c2a8ab4b268079d44c5c8830c0a93900f1827c67`。
+モデル取得・Docker起動・ブラウザ起動は下記の会話時間に含めない。
+会話用の音声処理開始から終了・解放までが **17.972秒**。
+これは1回のCI実測であり、速度の保証値・統計的なベンチマークではない。
 
-実モデルがない試験は失敗終了する。過去の固定文字列の代替応答を実AIと呼ばない。
-エミュレーターを実機とは呼ばない。数値PCMやWebAudio仮想経路を室内音響試験とは呼ばない。
-APK生成の成功と実機間会話の成功は別判定。
+| ターン | 側 | AI生成時間 | 本文の生成信号長 | 実際の送信処理時間 |
+|---|---|---:|---:|---:|
+| 1 | A | 2.349秒 | 1.299秒 | 1.416秒 |
+| 2 | B | 1.565秒 | 1.731秒 | 1.840秒 |
+| 3 | A | 1.796秒 | 1.477秒 | 1.585秒 |
+| 4 | B | 2.602秒 | 3.983秒 | 4.088秒 |
+
+符号速度1,200 WPM、搬送波4,000 Hz、2つの48 kHz AudioContext。
+送信音をMediaStreamへ流し、他方の実AudioWorkletが復号する。
+復号済みの本文を直接相手へ配送する代替経路は使っていない。
+4件の本文は生成結果と受信結果が完全一致し、4件のACKも音響経路を通った。
+終了後の仮想マイクトラック解放、ページ例外0件も確認した。
+
+**会話品質は別の評価が必要。** 小型モデルは途中で「防災用品」から日本語の表現の話へ逸れた。
+この試験は通信が生成文を改変しないことを示すが、モデルの推論能力や日本語会話の質を保証しない。
+また2役は同じモデルサーバーを使い、独立した2台のAIサーバーの検証ではない。
+全文・推論時間・各イベントは `real-ai-audio-evidence/real-ai-audio.json` に保存。
+
+## Androidの具体的な実行検証
+
+アプリとInstrumentation APKをインストールし、次の9項目を確認した。
+起動とバンドルAI画面、ネイティブJavaブリッジ、横方向にはみ出さない画面、4速度の実PCM自己診断、
+WebView内のAudioWorklet読込・生成、Java HttpURLConnection経由の実モデル応答、
+仮想マイクでの受信開始、停止と操作復帰、従来翻訳画面への遷移。
+
+エミュレーターと実モデルの接続には `adb reverse tcp:11434 tcp:11434` を使用。
+Android Lintはエラー0件、警告2件（target APIの更新案とバックアップ設定に関する指摘）。
+警告を抑制して成功に見せる変更はしていない。実機への適合保証ではない。
+APKはデバッグ署名。署名検査結果・APK SHA-256・対象コミットを成果物に同梱した。
+
+## 発見して修正した実不具合
+
+- Workletのモジュール読込時にTextEncoder / TextDecoderへ依存していた問題。
+- リポジトリへの転送中断による、Windowsランチャーと検証スクリプトの欠落。
+- CIでAndroid SDKの `sdkmanager` が未準備だった問題。
+- `MODIFY_AUDIO_SETTINGS` 権限不足により、WebViewが録音デバイスを初期化できなかった問題。
+- Android 8.0向けテーマへ新しいAPIの属性を混ぜていた問題。
+- Worklet故障・マイク切断時に送信待ちが残る問題、停止時の一例外で他のリソース解放が止まる問題。
+- 停止前の古いコールバックが再開済みの受信へ干渉する問題。
+- テスト間で保存済み履歴が混ざる問題、厳格CSPと不整合なテスト側のeval依存。
+- モデル取得の一時的なタイムアウト。取得を最大3回に制限し、全失敗時は失敗終了させる。
+
+## 未実施
+
+物理的なスマートフォン2台のスピーカー／マイク間通信、距離・反響・周囲雑音への耐性、
+実機ASR／TTS品質、ストア配布用署名、Android内へのLLMランタイム同梱は未実施。
+音声の生成長とAI推論を含む会話時間、数値処理と物理通信を混同しない。
+
+## 再現手順
+
+READMEのコマンドと `.github/workflows/verification.yml` に実行方法を保存している。
+この作業コンテナではAndroid SDKとDockerデーモンがなく、管理下Chromiumがループバック遷移を拒否したため、
+それらの実行検証はGitHubの標準ランナーで実施した。管理上の制限を回避する変更は行っていない。

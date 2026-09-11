@@ -16,7 +16,7 @@ Windowsアプリを `Start-AI-Windows.cmd` で開き、モデル名を入力、�
 
 ## 3. AndroidからWindows AIをUSBで使う開発用手順
 
-Android SDK Platform Toolsが導入済みで、端末所有者がUSBデバッグ接続を承認した開発端末向けです。Android APKのビルド／実行は今回未検証です。
+Android SDK Platform Toolsが導入済みで、端末所有者がUSBデバッグ接続を承認した開発端末向けです。Android APKはAPI 35エミュレーターでビルド・インストール・Java経由の実AI接続・受信開始／停止を検証しています。物理端末の検証とは区別してください。
 
 PC側ではAIサーバーを127.0.0.1:11434だけに待ち受けさせます。端末の番号は実際の `adb devices` 結果に置き換えます。
 
