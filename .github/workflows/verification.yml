@@ -1,255 +1,90 @@
-name: MorseTalk build and real verification
+# Isolated experiment; do not replace the main verification workflow.
+name: Separate desktop and native Android Gemma proof
 on:
   push:
-    paths-ignore: ['docs/**', '**.md']
-  pull_request:
-    paths-ignore: ['docs/**', '**.md']
+    branches: ['test/pc-android-native-proof']
   workflow_dispatch:
-defaults:
-  run:
-    shell: bash
 permissions:
   contents: read
+  actions: read
 concurrency:
-  group: morsetalk-${{ github.ref }}
+  group: native-cross-proof-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  core-browser:
+  separate-gemma-runtimes:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
+    env:
+      MORSETALK_AI_MODEL: gemma4:e2b-it-qat
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - uses: actions/setup-node@v4
-        with: {node-version: '22'}
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - name: Execute complete core and server tests in Docker
-        run: |
-          mkdir -p test-results
-          git rev-parse HEAD > test-results/source-commit.txt
-          docker build -t morsetalk-test .
-          docker run --rm morsetalk-test 2>&1 | tee test-results/container-tests.log
-      - run: node scripts/build.mjs
-      - run: python -m pip install playwright==1.57.0 websockets==16.0
-      - run: python -m playwright install --with-deps chromium
-      - name: AI and legacy UI regression tests
-        run: |
-          python tools/test_ai_ui.py
-          python tools/test_ui_inmemory.py
-      - run: python tools/test_qr_ui.py
-      - run: python tools/test_pc_android_ui.py
-      - run: python tools/test_online_browser.py
-      - name: Verify relay image and production TLS proxy configuration
-        run: |
-          docker build -t morsetalk-relay relay
-          RELAY_DOMAIN=relay.example.com docker compose -f relay/compose.public.yaml config -q
-          docker run --rm -e RELAY_DOMAIN=relay.example.com -v "$PWD/relay/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
-      - run: python tools/test_ui.py
-      - run: python tools/test_fast_browser.py
-      - name: Real-time audio control with explicitly identified AI test double
-        run: python tools/test_audio_pair.py
-      - run: node tools/benchmark_fast.mjs
-      - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: core-and-browser-evidence
-          path: test-results/
-          retention-days: 14
-  windows:
-    runs-on: windows-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - name: Actual Windows PowerShell launcher and loopback-server smoke test
-        shell: powershell
-        run: |
-          New-Item -ItemType Directory -Force test-results | Out-Null
-          git rev-parse HEAD | Out-File test-results/source-commit.txt -Encoding ascii
-          ./windows/smoke-test.ps1 | Tee-Object -FilePath test-results/windows-smoke.txt
-      - uses: actions/setup-node@v4
-        with: {node-version: '22'}
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - run: python -m pip install playwright==1.57.0 websockets==16.0
-      - run: python -m playwright install chromium
-      - run: node scripts/build.mjs
-      - name: Real Windows browser online Morse and USB orchestration regressions
-        run: |
-          python tools/test_online_browser.py
-          python -m unittest discover -s tests -p 'test_pc_android.py' -v
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: windows-evidence
-          path: test-results/
-          retention-days: 14
-  real-ai-audio:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    env: {MORSETALK_AI_MODEL: 'gemma4:e2b-it-qat'}
-    steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - uses: actions/setup-node@v4
-        with: {node-version: '22'}
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - name: Start actual Gemma 4 E2B in bounded Docker container
-        run: |
-          mkdir -p test-results
-          git rev-parse HEAD > test-results/source-commit.txt
-          bash tools/start_ci_model.sh
-      - run: python -m pip install playwright==1.57.0 websockets==16.0
-      - run: python -m playwright install --with-deps chromium
-      - name: Gemma A -> real-time PCM/AudioWorklet -> Gemma B, four turns
-        run: python tools/test_real_ai.py
-      - name: Real Gemma over encrypted online Morse in two browser contexts
-        run: python tools/test_online_browser.py --real-ai
-      - name: Preserve model logs and tested source
-        if: always()
-        run: |
-          mkdir -p test-results
-          docker logs morsetalk-ollama > test-results/ollama.log 2>&1 || true
-          git archive --format=zip -o test-results/source-tested.zip HEAD
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: real-ai-audio-evidence
-          path: test-results/
-          retention-days: 14
-      - if: always()
-        run: docker rm -f morsetalk-ollama morsetalk-relay || true
-  android-build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+          ref: 76752ead73455265779ebcd8ef8e6752cfc13a4b
+          persist-credentials: false
       - uses: actions/setup-java@v5
         with: {distribution: temurin, java-version: '17'}
       - uses: android-actions/setup-android@v4
-      - uses: gradle/actions/setup-gradle@v4
-        with: {gradle-version: '8.11.1'}
-      - name: Build app and instrumentation once for both Android runtime jobs
-        run: |
-          mkdir -p test-results/android
-          git rev-parse HEAD > test-results/source-commit.txt
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-          cd android
-          gradle --no-daemon --console=plain assembleDebug assembleDebugAndroidTest lintDebug
-      - name: Verify and record the exact app and test APKs that will be installed
-        run: |
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee test-results/android/apk-signature.txt
-          sha256sum android/app/build/outputs/apk/debug/app-debug.apk > test-results/android/APK-SHA256.txt
-          sha256sum android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk > test-results/android/TEST-APK-SHA256.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/download-artifact@v4
         with:
           name: MorseTalk-installable-debug-APK
-          path: |
-            android/app/build/outputs/apk/debug/app-debug.apk
-            android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            test-results/source-commit.txt
-            test-results/android/
-          if-no-files-found: error
-          retention-days: 14
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: android-build-and-lint-evidence
-          path: |
-            test-results/
-            android/app/build/reports/
-          retention-days: 14
-  android:
-    needs: android-build
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    env: {MORSETALK_AI_MODEL: 'gemma4:e2b-it-qat'}
-    steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - uses: actions/setup-java@v5
-        with: {distribution: temurin, java-version: '17'}
-      - uses: android-actions/setup-android@v4
-      - uses: actions/download-artifact@v4
-        with: {name: MorseTalk-installable-debug-APK, path: .}
-      - name: Verify the downloaded installable app, test APK and source identity
+          run-id: 34635467512
+          github-token: ${{ github.token }}
+          path: .verified-apk
+      - name: Use exact previously installed APK with identical app assets
         run: |
-          test "$(cat test-results/source-commit.txt)" = "$(git rev-parse HEAD)"
-          sha256sum -c test-results/android/APK-SHA256.txt
-          sha256sum -c test-results/android/TEST-APK-SHA256.txt
-      - run: bash tools/start_ci_model.sh
-      - name: Run bounded relay for the exact-APK online test
-        run: |
-          docker build -t morsetalk-relay relay
-          docker run -d --name morsetalk-relay --memory=192m --cpus=1 -e HOST=0.0.0.0 -p 127.0.0.1:8787:8787 morsetalk-relay
-          for n in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/healthz && break; sleep 1; done
-      - uses: actions/setup-node@v4
-        with: {node-version: '22'}
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - name: Desktop Chromium and Android WebView cross-runtime driver
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,shutil,zipfile
+          root=Path('.verified-apk')
+          assert (root/'test-results/source-commit.txt').read_text().strip()=='a0326d39cb1dfc67a88a1b87c4b65e066c202549'
+          paths={'android/app/build/outputs/apk/debug/app-debug.apk':'342de5ba24afd6ad7537a8c1be8178b7de460c44a4a36477a6b65e9a3849177f',
+                 'android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk':'a6a4aedf54207c18c3c92984426507a85fa110bbbbbe1d25e5a8c678cb9afa2e'}
+          for name,sha in paths.items():
+              assert hashlib.sha256((root/name).read_bytes()).hexdigest()==sha
+              p=Path(name);p.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(root/name,p)
+          assets=[]
+          with zipfile.ZipFile(root/'android/app/build/outputs/apk/debug/app-debug.apk') as z:
+              for name in z.namelist():
+                  if name.startswith('assets/') and not name.endswith('/'):
+                      p=Path('app')/name[len('assets/'):]
+                      assert z.read(name)==p.read_bytes(),name
+                      assets.append(name)
+          assert len(assets)==38
+          out=Path('test-results');out.mkdir(exist_ok=True)
+          (out/'apk-provenance.json').write_text(json.dumps({'source':'76752ead73455265779ebcd8ef8e6752cfc13a4b','apkBuildRun':34635467512,'apkCheckout':'a0326d39cb1dfc67a88a1b87c4b65e066c202549','verifiedSha256':paths,'matchingAppAssets':assets},indent=2))
+          PY
+          git rev-parse HEAD > test-results/source-commit.txt
+      - name: Install test drivers and obtain actual native model
         run: |
           python -m pip install playwright==1.57.0 websockets==16.0
           python -m playwright install --with-deps chromium
-      - name: Enable hosted-runner KVM
+          python tools/download_gemma4.py
+      - name: Start separate desktop model server
+        run: bash tools/start_ci_model.sh
+      - name: Enable KVM and prepare explicit native cross-device test
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Install the published APK; HTTP Gemma, receiver and polished UI
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          cores: 2
-          ram-size: 3072M
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back emulated -camera-front emulated
-          script: bash tools/android_pc_chat.sh
-      - name: Collect logs and verification scope
-        if: always()
-        run: |
-          mkdir -p test-results
-          docker logs morsetalk-ollama > test-results/ollama.log 2>&1 || true
-          printf 'The published APK is installed after SHA256 verification. Android emulator, not physical phones. Native Gemma has a separate job.\n' > test-results/SCOPE.txt
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: android-runtime-evidence
-          path: test-results/
-          retention-days: 14
-      - if: always()
-        run: docker rm -f morsetalk-ollama morsetalk-relay || true
-  android-local-gemma:
-    needs: android-build
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - uses: actions/setup-java@v5
-        with: {distribution: temurin, java-version: '17'}
-      - uses: android-actions/setup-android@v4
-      - uses: actions/download-artifact@v4
-        with: {name: MorseTalk-installable-debug-APK, path: .}
-      - name: Verify this is the same APK as the distributed and HTTP-tested artifact
-        run: |
-          test "$(cat test-results/source-commit.txt)" = "$(git rev-parse HEAD)"
-          sha256sum -c test-results/android/APK-SHA256.txt
-          sha256sum -c test-results/android/TEST-APK-SHA256.txt
-      - name: Download exact E2B LiteRT artifact and verify immutable revision and LFS digest
-        run: python3 tools/download_gemma4.py
-      - name: Enable hosted-runner KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Published APK with actual on-device Gemma, KV reuse, PCM and cancellation
+          cat > /tmp/native-cross-proof.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          bash tools/android_local_gemma.sh
+          adb reverse --list > test-results/reverse-before-native-cross.txt
+          if grep -q 'tcp:11434' test-results/reverse-before-native-cross.txt; then
+            echo 'Native phone must not have the HTTP inference endpoint forwarded' >&2
+            exit 1
+          fi
+          export MORSETALK_PLAYWRIGHT_MODULE="$(python -c 'import pathlib,playwright; print(pathlib.Path(playwright.__file__).parent / "driver" / "package")')"
+          export PYTHON="$(command -v python)"
+          node tools/test_pc_android.cjs --local-gemma
+          adb reverse --list > test-results/reverse-after-native-cross.txt
+          SH
+      - name: Real desktop Ollama <-> Morse relay <-> installed native LiteRT Gemma
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -261,10 +96,30 @@ jobs:
           disk-size: 8192M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back emulated -camera-front emulated
-          script: bash tools/android_local_gemma.sh
+          script: bash /tmp/native-cross-proof.sh
+      - name: Verify independent runtime result and preserve scope
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('test-results/pc-android/result.json').read_text())
+          assert r['ok'] and not r['sameInferenceServer'] and len(r['cases'])==4
+          assert r['usbHelperCreatedMapping'] and r['usbHelperCleanedUp']
+          assert r['androidInference']=='native LiteRT Gemma 4 E2B'
+          print('Verified separate Gemma runtimes: desktop and installed Android emulator; not physical hardware.')
+          PY
+      - name: Preserve exact source and all available evidence, including failures
+        if: always()
+        run: |
+          mkdir -p test-results
+          docker logs morsetalk-ollama > test-results/ollama.log 2>&1 || true
+          git archive --format=zip -o test-results/source-tested.zip HEAD
+          printf 'Linux desktop and Android API35 emulator. Separate real Gemma engines. Actual loopback/ADB Morse symbol transport, not a physical USB cable or acoustic air path. Exact APK provenance is separate from test-source commit; assets are byte-compared.\n' > test-results/SCOPE.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: android-local-Gemma4-E2B-evidence
+          name: separate-desktop-native-Gemma-evidence
           path: test-results/
           retention-days: 14
+      - if: always()
+        run: docker rm -f morsetalk-ollama || true
