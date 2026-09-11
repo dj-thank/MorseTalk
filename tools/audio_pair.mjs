@@ -34,6 +34,7 @@ async (config) => {
       const stream=sinks[1-nextMicrophone++].stream.clone();captures.push(stream);return stream;
     };
     for(let side=0;side<2;side++) {
+      event(side,{kind:'audio-starting',options:structuredClone(options)});
       const engine=new FastAudio(options);audio.push(engine);
       const actual=await engine.start(e=>{
         if(e.kind==='frame') {
@@ -84,6 +85,7 @@ async (config) => {
     result.ok=true;
   } catch(e) {
     result.error=String(e);
+    result.errorStack=e?.stack || null;
   } finally {
     agents.forEach(a=>a.stop());links.forEach(l=>l.close());audio.forEach(a=>a.stop());
     globalThis.AudioContext=NativeContext;

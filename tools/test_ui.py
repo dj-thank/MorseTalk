@@ -76,10 +76,12 @@ try:
   # Standalone offline file (no server required for Morse core).
   portable=context.new_page();portable.goto((ROOT/'dist/MorseTalk-Portable.html').as_uri());portable.locator('#draft').fill('こんにちは');expect(portable.locator('#send')).to_be_enabled();portable.locator('[data-tab="guide"]').click();portable.locator('#self-test').click();expect(portable.locator('#self-test-result')).to_contain_text('成功');passed('Standalone HTML bundles correctly and self-test runs from file://')
   # ASR UI transport mock: explicitly NOT a recognition-quality test.
-  mock=context.new_page();mock.route('**/api/capabilities',lambda route:route.fulfill(json={'platform':'windows','offlineSpeech':True,'description':'TEST DOUBLE'}))
+  # New context isolates the earlier opt-in localStorage/history scenario.
+  mock_context=browser.new_context(locale='ja-JP');mock=mock_context.new_page();mock.route('**/api/capabilities',lambda route:route.fulfill(json={'platform':'windows','offlineSpeech':True,'description':'TEST DOUBLE'}))
   bodies=[]
   def fake_asr(route):bodies.append(route.request.post_data_buffer);route.fulfill(json={'text':'認識結果のテスト','offline':True})
-  mock.route('**/api/transcribe*',fake_asr);mock.goto(server.origin+'/');expect(mock.locator('#voice')).to_be_enabled();mock.locator('#voice').click();expect(mock.locator('#status')).to_contain_text('話してください');mock.wait_for_timeout(500);mock.locator('#voice').click();expect(mock.locator('#draft')).to_have_value('認識結果のテスト',timeout=8000);assert bodies and bodies[0].startswith(b'RIFF');assert mock.locator('#history .bubble').count()==0;passed('Recording → bounded WAV → mock ASR → editable text; does not auto-send')
+  mock.route('**/api/transcribe*',fake_asr);mock.goto(server.origin+'/');assert mock.locator('#history .bubble').count()==0;expect(mock.locator('#voice')).to_be_enabled();mock.locator('#voice').click();expect(mock.locator('#status')).to_contain_text('話してください');mock.wait_for_timeout(500);mock.locator('#voice').click();expect(mock.locator('#draft')).to_have_value('認識結果のテスト',timeout=8000);assert bodies and bodies[0].startswith(b'RIFF');assert mock.locator('#history .bubble').count()==0;passed('Recording → bounded WAV → mock ASR → editable text; does not auto-send')
+  mock_context.close()
   browser.close()
 finally:
  server.shutdown();server.server_close();thread.join()
