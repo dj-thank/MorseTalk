@@ -56,7 +56,7 @@ def main(real_ai=False):
                 texts=[p.evaluate("()=>Object.fromEntries(['local','peer'].map(kind=>[kind,[...document.querySelectorAll('#transcript .'+kind)].map(e=>[...e.childNodes].slice(1).map(n=>n.textContent).join(''))]))") for p in pages]
                 assert texts[0]['local']==texts[1]['peer'] and texts[1]['local']==texts[0]['peer'],texts
                 assert all(len(x['local'])==len(x['peer'])==2 for x in texts),texts
-                report.update(model=model,transcripts=texts)
+                report.update(model=model,transcripts=texts,humanTopicSeed=True,aiGeneratedTurns=3)
                 check('Actual Gemma A/B complete four acknowledged turns over encrypted network Morse')
             else:
                 expect(a.locator('#manual-send')).to_be_enabled(timeout=15000);expect(b.locator('#manual-send')).to_be_disabled()

@@ -40,12 +40,13 @@ with sync_playwright() as p:
     page.evaluate('hold=false;release()')
     expect(page.locator('#status')).to_contain_text('PCM仮想経路テストが終了',timeout=30000)
     expect(page.locator('#turn-count')).to_have_text('8 / 8')
+    expect(page.locator('#transcript')).to_contain_text('あなたの最初の話題 · ターン 1')
     expect(page.locator('#transcript')).to_contain_text('あなたの話題変更 · ターン 3')
     assert page.locator('#transcript .peer').filter(has_text='話題を変えよう。宇宙の話をしよう。').count()==1
-    calls=page.evaluate('calls');assert len(calls)==7
-    assert '自由に入力した音楽の話題' in calls[0]['messages'][-1]['content']
+    calls=page.evaluate('calls');assert len(calls)==6
+    assert calls[0]['messages'][-1]['content']=='話題：自由に入力した音楽の話題'
     assert '質問して深掘り' in calls[0]['messages'][0]['content']
-    assert calls[2]['messages'][-1]['content']=='話題を変えよう。宇宙の話をしよう。'
+    assert calls[1]['messages'][-1]['content']=='話題を変えよう。宇宙の話をしよう。'
     assert all('料理の話' not in str(call) for call in calls)
     check('Human steering is a labelled actual Morse turn, consumes a turn and reaches peer AI without a direct-text bypass')
     expect(page.locator('#queue-topic')).to_be_disabled();expect(page.locator('#conversation-single')).to_be_enabled()

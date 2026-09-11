@@ -10,7 +10,7 @@ export function createConversationUI({getAgent,isRunning,changed,error,runSingle
   for(const topic of TOPICS)group.append(new Option(topic.label,topic.id));
   $('preset').append(group);
   const single=document.createElement('button');single.id='conversation-single';single.className='secondary';single.textContent='1台でAI同士の会話を試す';
-  const note=document.createElement('p');note.className='help';note.textContent='実際のGemmaを2役で呼び、発言をモールスPCM化・復号して受け渡します。最大8ターン。音は鳴らさず、2台の実通信とは別の試用モードです。';
+  const note=document.createElement('p');note.className='help';note.textContent='最初の話題を相手へ送り、以後は実Gemmaを2役で呼んでモールスPCM化・復号します。最初の話題も含め最大8ターン。音は鳴らさず、2台の実通信とは別の試用モードです。';
   $('topic').closest('label').after(single,note);
   const panel=document.createElement('div');panel.className='topic-steering';
   const topicLabel=document.createElement('label');topicLabel.textContent='会話中に次の話題を挟む';

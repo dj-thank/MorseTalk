@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real configured Gemma, 10 topics x 4 turns, 3 additional styles and a topic switch.
+"""Real configured Gemma, 10 topics x 6 turns, 3 additional styles and a topic switch.
 Production model adapter/agent/PCM decoder; numerical PCM only, not air or real-time audio.
 No stub replies or permissive fallback. Semantic quality is reported for human review.
 """
@@ -21,7 +21,7 @@ def main():
             page.evaluate('() => {window.topicProof = '+(ROOT/'tools/conversation_topics.mjs').read_text()+';}')
             cases=[{'topic':x,'style':'natural'} for x in ['daily','music','food','travel','science','technology','learning','games','creative','philosophy']]
             cases += [{'topic':'technology','style':x} for x in ['brainstorm','discuss','interview']]
-            cases += [{'topic':'music','style':'natural','switchTopic':'少ない材料で作れる料理の話をしよう。','turns':6}]
+            cases += [{'topic':'music','style':'natural','switchTopic':'少ない材料で作れる料理の話をしよう。','turns':8}]
             for case in cases:
                 page.evaluate('cfg=>{window.currentResult=null;topicProof(cfg).then(x=>currentResult=x).catch(e=>currentResult={ok:false,error:String(e)});}',{**case,'model':model})
                 wait_js(page,'()=>window.currentResult!==null',timeout_ms=300000)

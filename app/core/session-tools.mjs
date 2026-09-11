@@ -41,7 +41,7 @@ export class SessionJournal {
     for (const key of ['seq','sender','attempt','bytes','inferenceMs','signalSeconds']) {
       if (Number.isFinite(event[key]) && event[key]>=0) item[key]=event[key];
     }
-    if(event.origin==='human-topic'||event.origin==='ai')item.origin=event.origin;
+    if(event.origin==='human-topic'||event.origin==='human-seed'||event.origin==='ai')item.origin=event.origin;
     for (const key of ['text','message']) if (typeof event[key]==='string') item[key]=event[key].slice(0,8192);
     if (item.kind==='delivered' && Number.isInteger(item.seq)) this.delivered.add(item.seq);
     if (item.kind==='peer' && Number.isInteger(item.seq)) this.received.add(item.seq);

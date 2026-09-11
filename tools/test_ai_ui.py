@@ -70,7 +70,7 @@ with sync_playwright() as p:
     native.locator('#provider').select_option('ollama');expect(native.locator('#model')).to_have_value('gemma4:e2b-it-qat');expect(native.locator('#model')).to_be_enabled();expect(native.locator('#local-model-controls')).to_be_hidden();passed('Explicit HTTP-provider selection restores editable controls without silent fallback')
     native.locator('#model').fill('named-test-double');native.locator('#consent').check();native.locator('#test-ai').click();expect(native.locator('#transcript')).to_contain_text('TEST DOUBLE 応答。');passed('AI client → native bridge → result event contract, using a named test double')
     native.locator('#ai-pair').click();expect(native.locator('#status')).to_contain_text('PCM仮想経路テストが終了',timeout=15000)
-    assert native.evaluate('aiCalls.length')==9 # one connection probe, eight bounded turns
+    assert native.evaluate('aiCalls.length')==8 # one connection probe, one explicit topic turn and seven AI turns
     assert native.locator('#transcript').inner_text().count('数値処理で復号')==8;passed('Eight-turn integrated UI + stub AI + real PCM Morse virtual conversation')
     expect(native.locator('#turn-count')).to_have_text('8 / 8');expect(native.locator('#retry-count')).to_have_text('0');passed('Completed turn and retry counters reflect delivered PCM dialogue, not generated-only guesses')
     native.locator('summary').filter(has_text='検証ログを保存').click();native.locator('#export-log').click();expect(native.locator('#export-log')).to_be_enabled()

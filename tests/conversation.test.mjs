@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {TOPICS, STYLES, DEFAULT_GOAL, conversationPrompt, conversationMessages, replyIssue, topicMessage} from '../app/core/conversation.mjs';
+import {TOPICS, STYLES, DEFAULT_GOAL, conversationPrompt, conversationMessages, replyIssue, topicMessage, initialTopic} from '../app/core/conversation.mjs';
 import {ReliableMorseLink,MorseAgent} from '../app/core/fast-link.mjs';
 import {unpackFastFrame,fastPcm,FastMorseDecoder} from '../app/core/fast-codec.mjs';
 import {SessionJournal} from '../app/core/session-tools.mjs';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-function single(generate,{maxTurns=8,maxReplyBytes=180,onEvent=()=>{}}={}) {
+function single(generate,{maxTurns=8,maxReplyBytes=180,shareTopic=false,onEvent=()=>{}}={}) {
   const frames=[],events=[];let link;
   link=new ReliableMorseLink({session:91,sender:0,ackTimeoutMs:200,maxRetries:0,sendAudio:async bytes=>{
     const frame=unpackFastFrame(bytes);frames.push(frame);
     if(frame.type==='data')setTimeout(()=>link.receive({...frame,type:'ack',sender:1,text:''}),0);
   }});
-  const a=new MorseAgent({link,generate,maxTurns,maxReplyBytes,onEvent:e=>{events.push(e);onEvent(e,a);}});
+  const a=new MorseAgent({link,generate,maxTurns,maxReplyBytes,shareTopic,onEvent:e=>{events.push(e);onEvent(e,a);}});
   return {a,frames,events};
 }
 for(const topic of TOPICS)test(`Editable ${topic.id} seed is a topic, not a canned AI reply`,()=>{
@@ -103,4 +103,24 @@ test('Repair carries a bounded unsent candidate and exact shorter target, withou
   const prompt=conversationMessages('S',h,{issue:'length',text:'旋律'.repeat(5000),maxReplyBytes:180}).at(-1).content;
   assert.match(prompt,/未送信の案/);assert.match(prompt,/日本語20文字程度/);assert.ok(new TextEncoder().encode(prompt).length<2500);
   assert.equal(JSON.stringify(h),before);
+});
+
+test('Initial topic crosses the ordinary frame before peer inference; never invented by the first AI',async()=>{
+  let calls=0;const {a,frames,events}=single(async()=>{calls++;return '月の氷を調べたいです。';},{shareTopic:true});
+  await a.start('月の研究基地で調べたいことは？');
+  assert.equal(calls,0);assert.equal(frames[0].text,'話題：月の研究基地で調べたいことは？');
+  assert.equal(events.find(e=>e.kind==='generated').origin,'human-seed');a.stop();
+});
+test('Oversized shared topic is rejected before history or sequence advances; no silent shortening',async()=>{
+  const {a,frames}=single(async()=> '応答',{shareTopic:true,maxReplyBytes:32});
+  await assert.rejects(a.start('長い初期話題'.repeat(50)),/短く/);assert.equal(a.history.length,0);assert.equal(a.link.nextSend,1);assert.equal(frames.length,0);a.stop();
+});
+test('Unexpected Korean drift is repaired, while explicit Korean learning remains possible',()=>{
+  assert.equal(replyIssue('古い看板은 재미있어요。',[{role:'user',content:'街歩きの話をしよう'}],180),'language');
+  assert.equal(replyIssue('안녕하세요。',[{role:'user',content:'韓国語の挨拶を教えて'}],180),null);
+  assert.equal(replyIssue('音楽について考えよう。',[],180),null);
+});
+test('Human initial topic has explicit origin but is absent from text-free diagnostics',()=>{
+  const journal=new SessionJournal();journal.record({kind:'generated',origin:'human-seed',text:'private seed',seq:1});
+  assert.equal(journal.export().events[0].origin,'human-seed');assert.equal('text' in journal.export().events[0],false);
 });

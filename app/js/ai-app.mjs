@@ -35,7 +35,7 @@ function options(){
   packFastFrame({room,session,sender,seq:1,text:'test'});
   if(!Number.isInteger(maxTurns)||maxTurns<2||maxTurns>32||!Number.isInteger(maxReplyBytes)||maxReplyBytes<32||maxReplyBytes>512)throw new Error('会話制限の数値を確認してください。');
   if(![120,300,600,1200].includes(wpm)||!Number.isFinite(volume)||volume<.03||volume>.35)throw new Error('速度・音量の設定が不正です。');
-  return {room,session,sender,wpm,volume,maxTurns,maxReplyBytes,frequency:4000,goal:$('goal').value,style:conversationUI?.style()||'natural'};
+  return {room,session,sender,wpm,volume,maxTurns,maxReplyBytes,frequency:4000,goal:$('goal').value,style:conversationUI?.style()||'natural',shareTopic:true};
 }
 function aiOptions(){
   if(!$('consent').checked)throw new Error('会話文をAIに渡すことを許可してください。');
@@ -75,7 +75,7 @@ function agentEvents(label,opts){return e=>{
   if(e.kind==='thinking')status(`${label} が応答を生成中…`);
   if(e.kind==='repairing'){entry('送信前の再生成',`ターン ${e.seq} · ${e.reason}。文章はまだ送っていません。`);status('反復・空文・長さを検出。Gemmaが一度だけ生成し直しています…');}
   if(e.kind==='generated'){
-    entry(e.origin==='human-topic'?`あなたの話題変更 · ターン ${e.seq}`:`${label} · ターン ${e.seq}`,e.text,'local');$('inference').textContent=`${(e.inferenceMs/1000).toFixed(2)} s`;
+    entry(e.origin==='human-seed'?`あなたの最初の話題 · ターン ${e.seq}`:e.origin==='human-topic'?`あなたの話題変更 · ターン ${e.seq}`:`${label} · ターン ${e.seq}`,e.text,'local');$('inference').textContent=`${(e.inferenceMs/1000).toFixed(2)} s`;
     const b=packFastFrame({...opts,sender:label.endsWith('B')?1:0,seq:e.seq,text:e.text});$('airtime').textContent=network?`${b.length} B · 音送信なし`:`${fastDuration(b,opts).toFixed(3)} s`;
   }
   if(e.kind==='peer')entry(`相手 · ターン ${e.seq}`,e.text,'peer');

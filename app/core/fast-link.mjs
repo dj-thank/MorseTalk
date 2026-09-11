@@ -1,6 +1,6 @@
 /** Bounded half-duplex AI conversation. Remote text is data, never executable code. */
 import { packFastFrame, parseFastWire, fastWire } from './fast-codec.mjs';
-import { DEFAULT_GOAL, conversationPrompt, conversationMessages, replyIssue, topicMessage } from './conversation.mjs';
+import { DEFAULT_GOAL, initialTopic, conversationPrompt, conversationMessages, replyIssue, topicMessage } from './conversation.mjs';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
 export class ReliableMorseLink {
@@ -84,9 +84,9 @@ export class ReliableMorseLink {
   close(){if(!this.open)return;this.open=false;this.pendingAcks.clear();this.pending?.resolve('closed');this.event('closed');}
 }
 export class MorseAgent {
-  constructor({link,generate,goal=DEFAULT_GOAL,style='natural',maxTurns=8,maxReplyBytes=180,onEvent=()=>{}}){
-    if(!link||typeof generate!=='function'||typeof goal!=='string'||!goal.trim()||goal.length>600||!Number.isInteger(maxTurns)||maxTurns<2||maxTurns>32||!Number.isInteger(maxReplyBytes)||maxReplyBytes<32||maxReplyBytes>512)throw new Error('AI会話設定が不正です。');
-    Object.assign(this,{link,generate,goal,style,maxTurns,maxReplyBytes,onEvent});
+  constructor({link,generate,goal=DEFAULT_GOAL,style='natural',shareTopic=false,maxTurns=8,maxReplyBytes=180,onEvent=()=>{}}){
+    if(!link||typeof generate!=='function'||typeof shareTopic!=='boolean'||typeof goal!=='string'||!goal.trim()||goal.length>600||!Number.isInteger(maxTurns)||maxTurns<2||maxTurns>32||!Number.isInteger(maxReplyBytes)||maxReplyBytes<32||maxReplyBytes>512)throw new Error('AI会話設定が不正です。');
+    Object.assign(this,{link,generate,goal,style,shareTopic,maxTurns,maxReplyBytes,onEvent});
     conversationPrompt({...this,sender:link.sender}); // Validate before taking ownership of onData.
     this.history=[];this.active=true;this.busy=false;this.currentSeq=null;this.pendingTopic=null;this.abort=new AbortController();
     link.onData=frame=>this.received(frame);
@@ -98,6 +98,7 @@ export class MorseAgent {
     if(!this.active)throw new Error('停止済みです。新しいセッションで開始してください。');
     if(this.history.length)throw new Error('会話はすでに開始しています。');
     if(typeof topic!=='string'||!topic.trim()||topic.length>1000)throw new Error('開始する話題を入力してください。');
+    if(this.shareTopic)initialTopic(topic,this.maxReplyBytes);
     this.history.push({role:'user',content:topic});await this.reply(1);
   }
   queueTopic(text){
@@ -121,7 +122,9 @@ export class MorseAgent {
     this.busy=true;this.currentSeq=seq;const started=performance.now();
     try{
       let text,origin='ai',repairs=0;
-      if(this.pendingTopic!==null){
+      if(seq===1&&this.shareTopic){
+        text=initialTopic(this.history[0].content,this.maxReplyBytes);origin='human-seed';
+      }else if(this.pendingTopic!==null){
         text=this.pendingTopic;this.pendingTopic=null;origin='human-topic';
       }else{
         this.event('thinking',{seq});let issue=null,candidate=null;

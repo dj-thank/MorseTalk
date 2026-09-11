@@ -60,7 +60,7 @@ async (config) => {
         ? (messages,args)=>generateReply(messages,{...args,model:config.model,consent:true})
         : async messages=>'検証'+messages.filter(m=>m.role==='assistant').length+'。';
       agents.push(new MorseAgent({link,generate,maxTurns:4,maxReplyBytes:config.maxReplyBytes || 180,
-        goal:'防災用品を一つずつ提案する。日本語15文字以内の一文で、具体的な品名を答える。',onEvent:e=>event(side,e)}));
+        shareTopic:true,goal:'防災用品を一つずつ提案する。日本語15文字以内の一文で、具体的な品名を答える。',onEvent:e=>event(side,e)}));
     }
     const first=agents[0].start('地震への備えとして、何を用意しますか。');
     const deadline=performance.now()+(config.realAI?360000:60000);
@@ -81,7 +81,7 @@ async (config) => {
       const peer=received.find(e=>e.side!==message.side && e.seq===message.seq);
       if(!peer||peer.text!==message.text)throw Error('End-to-end text mismatch');
     }
-    result.turns=generated.map(e=>({side:e.side,seq:e.seq,text:e.text,inferenceMs:e.inferenceMs}));
+    result.turns=generated.map(e=>({side:e.side,seq:e.seq,text:e.text,origin:e.origin,inferenceMs:e.inferenceMs}));
     result.ok=true;
   } catch(e) {
     result.error=String(e);
