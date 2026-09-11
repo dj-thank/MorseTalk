@@ -97,3 +97,10 @@ test('Queued human topics stay private in default log but their origin is visibl
   const log=new SessionJournal();log.record({kind:'generated',origin:'human-topic',text:'private topic',seq:3});
   assert.equal(log.export().events[0].origin,'human-topic');assert.equal('text' in log.export().events[0],false);
 });
+
+test('Repair carries a bounded unsent candidate and exact shorter target, without modifying history',()=>{
+  const h=[{role:'user',content:'音楽の話をしよう'}],before=JSON.stringify(h);
+  const prompt=conversationMessages('S',h,{issue:'length',text:'旋律'.repeat(5000),maxReplyBytes:180}).at(-1).content;
+  assert.match(prompt,/未送信の案/);assert.match(prompt,/日本語20文字程度/);assert.ok(new TextEncoder().encode(prompt).length<2500);
+  assert.equal(JSON.stringify(h),before);
+});

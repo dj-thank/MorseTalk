@@ -124,13 +124,14 @@ export class MorseAgent {
       if(this.pendingTopic!==null){
         text=this.pendingTopic;this.pendingTopic=null;origin='human-topic';
       }else{
-        this.event('thinking',{seq});let issue=null;
+        this.event('thinking',{seq});let issue=null,candidate=null;
         for(let attempt=0;attempt<2;attempt++){
           if(!this.active||this.abort.signal.aborted)return;
-          text=await this.generate(conversationMessages(this.systemPrompt(),this.history,issue),{signal:this.abort.signal,maxBytes:this.maxReplyBytes});
+          text=await this.generate(conversationMessages(this.systemPrompt(),this.history,issue?{issue,text:candidate,maxReplyBytes:this.maxReplyBytes}:null),{signal:this.abort.signal,maxBytes:this.maxReplyBytes});
           if(!this.active)return;
           issue=replyIssue(text,this.history,this.maxReplyBytes);
           if(!issue)break;
+          candidate=text;
           if(attempt===0){repairs++;this.event('repairing',{seq,reason:issue,attempt:1});}
           else throw Error('AI応答を一度生成し直しましたが、空文・反復・文字数などの検査を通りませんでした。内容を勝手に切らず停止しました。');
         }

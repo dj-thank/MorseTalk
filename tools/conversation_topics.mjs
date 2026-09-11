@@ -4,7 +4,7 @@ async config => {
   const {fastPcm,FastMorseDecoder}=await import('/core/fast-codec.mjs');
   const {generateReply}=await import('/js/ai-client.mjs');
   const topic=TOPICS.find(t=>t.id===config.topic),maxTurns=config.turns||4;
-  const report={ok:false,topic:config.topic,style:config.style,turns:[],received:[],delivered:[],repairs:[],errors:[]};
+  const report={ok:false,topic:config.topic,style:config.style,turns:[],attempts:[],received:[],delivered:[],repairs:[],errors:[]};
   const agents=[],links=[];const start=performance.now();let queued=false;
   try {
     for(let side=0;side<2;side++)links.push(new ReliableMorseLink({room:'0000',session:901,sender:side,ackDelayMs:0,ackTimeoutMs:1000,maxRetries:0,
@@ -17,7 +17,7 @@ async config => {
         setTimeout(()=>links[1-side].receive(decoded).catch(e=>report.errors.push(String(e))),0);
       }}));
     for(let side=0;side<2;side++)agents.push(new MorseAgent({link:links[side],goal:DEFAULT_GOAL,style:config.style,maxTurns,maxReplyBytes:180,
-      generate:(messages,args)=>generateReply(messages,{...args,consent:true,model:config.model}),
+      generate:async(messages,args)=>{const text=await generateReply(messages,{...args,consent:true,model:config.model});report.attempts.push({side,text,utf8Bytes:new TextEncoder().encode(text).length});return text;},
       onEvent:e=>{
         if(e.kind==='generated'){
           report.turns.push({side,seq:e.seq,text:e.text,origin:e.origin,inferenceMs:e.inferenceMs});

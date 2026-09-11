@@ -27,7 +27,8 @@ def main():
                 wait_js(page,'()=>window.currentResult!==null',timeout_ms=300000)
                 result=page.evaluate('()=>currentResult');report['cases'].append(result)
                 print(json.dumps(result,ensure_ascii=False),flush=True)
-                assert result.get('ok'), result.get('error')
+            failed=[{'topic':c.get('topic'),'style':c.get('style'),'error':c.get('error')} for c in report['cases'] if not c.get('ok')]
+            assert not failed, failed
             assert not errors,errors
             report.update(ok=True,pageErrors=errors)
     finally:
