@@ -8,3 +8,6 @@ Full Apache license text is included. These unmodified dependencies are resolved
 Other upstream native dependencies retain their own terms; this is not a full source-level native dependency license audit.
 Gemma 4 weights are separately obtained under Apache-2.0 and are not bundled in this APK.
 https://developers.google.com/edge/litert-lm/models/gemma-4
+
+QR generator: qrcode-generator 1.4.4, Kazuhiko Arase (MIT); see qrcode-generator.txt and qrcode-generator-README.txt.
+QR decoder: jsQR 1.4.0, Cozmo jsQR contributors (Apache-2.0); see jsQR.txt. Vendored unmodified browser distributions; no runtime CDN requests.

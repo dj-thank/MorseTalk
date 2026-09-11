@@ -52,7 +52,7 @@ export class SessionJournal {
   get elapsedMs() { return Math.max(0,(this.ended??this.clock())-this.started); }
   get turns() { return new Set([...this.delivered,...this.received]).size; }
   export(includeText=false) {
-    return {schema:'morsetalk-session-1', appVersion:'0.3.1', mode:this.mode, elapsedMs:this.elapsedMs,
+    return {schema:'morsetalk-session-1', appVersion:'0.4.0', mode:this.mode, elapsedMs:this.elapsedMs,
       completedTurns:this.turns, retries:this.retries, droppedEvents:this.dropped,
       containsConversation:includeText===true, physicalLinkVerified:false,
       note:'Execution log, not proof of physical acoustics. Endpoint configuration, consent, room and authentication token fields are not exported. Explicitly included conversation may contain private data.',

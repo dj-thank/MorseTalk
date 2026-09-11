@@ -48,7 +48,7 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final String ORIGIN = "https://" + HOST;
-    private static final int MICROPHONE = 10, SAVE_FILE = 11, OPEN_FILE = 12, IMPORT_MODEL = 13;
+    private static final int MICROPHONE = 10, SAVE_FILE = 11, OPEN_FILE = 12, IMPORT_MODEL = 13, CAMERA = 14;
     private static final int MAX_SAVE = 20 * 1024 * 1024;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService fileWorker = Executors.newSingleThreadExecutor();
@@ -117,18 +117,23 @@ public final class MainActivity extends Activity {
             @Override public void onPermissionRequest(PermissionRequest request) {
                 ui.post(() -> {
                     if (!foreground || web == null || !trustedPage(web.getUrl()) || !trusted(request.getOrigin()) || webPermission != null) { request.deny(); return; }
-                    boolean audio = false;
-                    for (String resource : request.getResources()) if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) audio = true;
-                    if (!audio) { request.deny(); return; }
+                    String[] resources = request.getResources();
+                    if (resources.length != 1) { request.deny(); return; }
+                    final String resource = resources[0];
+                    final boolean camera = PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource);
+                    if (!camera && !PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) { request.deny(); return; }
+                    if (camera && !aiPage(web.getUrl())) { request.deny(); return; }
                     final String permissionPage = pageBase(web.getUrl());
                     webPermission = request;
-                    requestMicrophone(() -> {
+                    Runnable allowed = () -> {
                         PermissionRequest pending = webPermission; webPermission = null;
                         if (pending != null) {
-                            if (foreground && web != null && permissionPage.equals(pageBase(web.getUrl())) && hasMicrophone()) pending.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+                            boolean granted = camera ? hasCamera() : hasMicrophone();
+                            if (foreground && web != null && permissionPage.equals(pageBase(web.getUrl())) && granted) pending.grant(new String[]{resource});
                             else pending.deny();
                         }
-                    });
+                    };
+                    if (camera) requestCamera(allowed); else requestMicrophone(allowed);
                 });
             }
             @Override public void onPermissionRequestCanceled(PermissionRequest request) {
@@ -138,8 +143,10 @@ public final class MainActivity extends Activity {
                 if (!foreground || !trustedPage(view.getUrl())) { callback.onReceiveValue(null); return true; }
                 if (fileChooser != null) fileChooser.onReceiveValue(null);
                 fileChooser = callback;
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("audio/*");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"audio/wav", "audio/x-wav", "audio/wave"});
+                boolean image = false;
+                for (String accept : params.getAcceptTypes()) if (accept != null && accept.startsWith("image/")) image = true;
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(image ? "image/*" : "audio/*");
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, image ? new String[]{"image/png", "image/jpeg", "image/webp"} : new String[]{"audio/wav", "audio/x-wav", "audio/wave"});
                 try { startActivityForResult(intent, OPEN_FILE); }
                 catch (RuntimeException ex) { fileChooser.onReceiveValue(null); fileChooser = null; }
                 return true;
@@ -182,7 +189,7 @@ public final class MainActivity extends Activity {
         Map<String, String> headers = new HashMap<>();
         headers.put("Cache-Control", "no-store");
         headers.put("X-Content-Type-Options", "nosniff");
-        headers.put("Content-Security-Policy", "default-src 'self'; script-src 'self' blob:; worker-src 'self' blob:; style-src 'self'; img-src 'self' data:; connect-src 'none'; media-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
+        headers.put("Content-Security-Policy", "default-src 'self'; script-src 'self' blob:; worker-src 'self' blob:; style-src 'self'; img-src 'self' data:; connect-src wss: ws://127.0.0.1:*; media-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
         return new WebResourceResponse(mime, "UTF-8", status, status == 200 ? "OK" : "Blocked", headers, new ByteArrayInputStream(bytes));
     }
     private WebResourceResponse assetResponse(WebResourceRequest request) {
@@ -314,6 +321,12 @@ public final class MainActivity extends Activity {
         } catch (JSONException ignored) { }
     }
     private boolean hasMicrophone() { return checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED; }
+    private boolean hasCamera() { return checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED; }
+    private void requestCamera(Runnable action) {
+        if (hasCamera() || afterPermission != null) { action.run(); return; }
+        afterPermission = action;
+        requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA);
+    }
     private void requestMicrophone(Runnable action) {
         if (hasMicrophone()) { action.run(); return; }
         if (afterPermission != null) { action.run(); return; }
@@ -322,7 +335,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode == MICROPHONE) { Runnable action = afterPermission; afterPermission = null; if (action != null) action.run(); }
+        if (requestCode == MICROPHONE || requestCode == CAMERA) { Runnable action = afterPermission; afterPermission = null; if (action != null) action.run(); }
     }
 
     private void recognize(String id, String language) {
@@ -407,7 +420,7 @@ public final class MainActivity extends Activity {
     private void saveFile(String id, JSONObject params) throws JSONException {
         if (saveId != null) { reply(id, null, "別の保存操作が進行中です。"); return; }
         String name = params.getString("filename"), mime = params.getString("mime"), encoded = params.getString("base64");
-        if (!name.matches("[A-Za-z0-9_.-]{1,100}") || !(mime.equals("audio/wav") || mime.equals("application/json"))) throw new JSONException("保存形式が不正です。");
+        if (!name.matches("[A-Za-z0-9_.-]{1,100}") || !(mime.equals("audio/wav") || mime.equals("application/json") || mime.equals("image/png"))) throw new JSONException("保存形式が不正です。");
         if (encoded.length() > ((MAX_SAVE + 2) / 3) * 4) throw new JSONException("保存は20 MBまでです。");
         byte[] bytes = Base64.decode(encoded, Base64.NO_WRAP);
         if (bytes.length > MAX_SAVE) throw new JSONException("保存は20 MBまでです。");

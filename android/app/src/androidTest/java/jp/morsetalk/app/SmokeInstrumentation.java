@@ -56,6 +56,8 @@ public final class SmokeInstrumentation extends Instrumentation {
             }
             checkLocalValidation();
             checkPolishedControls();
+            checkQRControls();
+            if(arguments!=null&&!arguments.getString("online_relay", "").isEmpty())checkOnlineRelay(arguments.getString("online_relay"));
             if (arguments != null && "true".equals(arguments.getString("local_model", "false"))) checkNativeGemma();
             String model=arguments==null?"":arguments.getString("model","");
             if(!model.isEmpty()) {
@@ -83,6 +85,33 @@ public final class SmokeInstrumentation extends Instrumentation {
             result.putString("stream",(ok?"MORSETALK_SMOKE_OK":"MORSETALK_SMOKE_FAILED")+"\n"+report.toString()+"\n");
             finish(ok?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);
         }
+    }
+    private void checkQRControls() throws Exception {
+        js("document.querySelector('#show-acoustic-qr').click();true");
+        require("(()=>{const c=document.querySelector('#pair-qr'),d=c.getContext('2d').getImageData(0,0,c.width,c.height);window.scannedPair=jsQR(d.data,d.width,d.height).data;return scannedPair.startsWith('MT2|');})()", "QR roundtrip failed");
+        check("Bundled QR encoder and decoder round-trip actual Android canvas pixels",true);
+        js("document.querySelector('#qr-input').value=scannedPair;document.querySelector('#qr-stage').click();true");
+        require("!document.querySelector('#qr-apply').disabled && document.querySelector('#stop').disabled", "QR preview started work");
+        js("document.querySelector('#qr-apply').click();true");
+        require("document.querySelector('#transport').value==='acoustic' && document.querySelector('#stop').disabled", "QR apply started work");
+        check("QR preview and apply preserve no-auto-start and no-consent-grant behavior",true);
+        tap("#scan-qr");
+        waitJs("document.querySelector('#qr-video').videoWidth>0",20000);
+        js("window.cameraTracks=[...document.querySelector('#qr-video').srcObject.getTracks()];true");
+        check("Actual Android camera permission and WebView virtual-camera capture start",true);
+        tap("#qr-camera-stop");
+        waitJs("cameraTracks.every(t=>t.readyState==='ended') && !document.querySelector('#scan-qr').disabled",10000);
+        check("Camera stop ends every video track and restores pairing controls",true);
+    }
+    private void checkOnlineRelay(String endpoint) throws Exception {
+        byte[] source;
+        try(java.io.InputStream in=getContext().getAssets().open("online-proof.js");java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()) {
+            byte[] buffer=new byte[4096];int n;while((n=in.read(buffer))!=-1)out.write(buffer,0,n);source=out.toByteArray();
+        }
+        js("window.onlineProof=null;window.proofRelay="+JSONObject.quote(endpoint)+";"+new String(source,StandardCharsets.UTF_8)+"true");
+        waitJs("window.onlineProof!==null",45000);
+        require("onlineProof.ok", "WebView online transport failed: "+js("JSON.stringify(onlineProof)"));
+        check("Actual Android WebSocket, AES-GCM and relay: four exact Morse messages and ACKs",js("JSON.stringify(onlineProof)"));
     }
     private void checkLocalValidation() throws Exception {
         LocalGemma.validateMessages(new JSONArray("[{\"role\":\"user\",\"content\":\"こんにちは\"}]"));

@@ -1,0 +1,27 @@
+services:
+  relay:
+    build: .
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    cpus: 1.0
+    pids_limit: 64
+    restart: unless-stopped
+  caddy:
+    image: caddy:2.10.2-alpine
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN:?Set RELAY_DOMAIN to your DNS hostname}
+    ports: ['80:80', '443:443']
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 128m
+    restart: unless-stopped
+volumes:
+  caddy_data:
+  caddy_config:

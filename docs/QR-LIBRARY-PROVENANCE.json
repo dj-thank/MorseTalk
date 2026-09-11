@@ -1,0 +1,160 @@
+[
+  {
+    "id": "qrcode-generator@1.4.4",
+    "name": "qrcode-generator",
+    "version": "1.4.4",
+    "size": 46334,
+    "unpackedSize": 116754,
+    "shasum": "63f771224854759329a99048806a53ed278740e7",
+    "integrity": "sha512-HM7yY8O2ilqhmULxGMpcHSF1EhJJ9yBj8gvDEuZ6M+KGJ0YY2hKpnXvRD+hZPLrDVck3ExIGhmPtSdcjC+guuw==",
+    "filename": "qrcode-generator-1.4.4.tgz",
+    "files": [
+      {
+        "path": "README.md",
+        "size": 3711,
+        "mode": 438
+      },
+      {
+        "path": "package.json",
+        "size": 612,
+        "mode": 438
+      },
+      {
+        "path": "qrcode_SJIS.js",
+        "size": 39023,
+        "mode": 438
+      },
+      {
+        "path": "qrcode_UTF8.js",
+        "size": 793,
+        "mode": 438
+      },
+      {
+        "path": "qrcode.d.ts",
+        "size": 1955,
+        "mode": 438
+      },
+      {
+        "path": "qrcode.js",
+        "size": 56694,
+        "mode": 438
+      },
+      {
+        "path": "sample.html",
+        "size": 1710,
+        "mode": 438
+      },
+      {
+        "path": "sample.js",
+        "size": 1349,
+        "mode": 438
+      },
+      {
+        "path": "test/qrcode.js",
+        "size": 10907,
+        "mode": 438
+      }
+    ],
+    "entryCount": 9,
+    "bundled": []
+  },
+  {
+    "id": "jsqr@1.4.0",
+    "name": "jsqr",
+    "version": "1.4.0",
+    "size": 64745,
+    "unpackedSize": 279741,
+    "shasum": "8efb8d0a7cc6863cb6d95116b9069123ce9eb2d1",
+    "integrity": "sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==",
+    "filename": "jsqr-1.4.0.tgz",
+    "files": [
+      {
+        "path": "LICENSE",
+        "size": 11358,
+        "mode": 420
+      },
+      {
+        "path": "README.md",
+        "size": 5340,
+        "mode": 420
+      },
+      {
+        "path": "dist/binarizer/index.d.ts",
+        "size": 271,
+        "mode": 420
+      },
+      {
+        "path": "dist/BitMatrix.d.ts",
+        "size": 395,
+        "mode": 420
+      },
+      {
+        "path": "dist/decoder/decodeData/BitStream.d.ts",
+        "size": 208,
+        "mode": 420
+      },
+      {
+        "path": "dist/decoder/decodeData/index.d.ts",
+        "size": 634,
+        "mode": 420
+      },
+      {
+        "path": "dist/decoder/decodeData/shiftJISTable.d.ts",
+        "size": 68,
+        "mode": 420
+      },
+      {
+        "path": "dist/decoder/decoder.d.ts",
+        "size": 146,
+        "mode": 420
+      },
+      {
+        "path": "dist/decoder/reedsolomon/GenericGF.d.ts",
+        "size": 582,
+        "mode": 420
+      },
+      {
+        "path": "dist/decoder/reedsolomon/GenericGFPoly.d.ts",
+        "size": 545,
+        "mode": 420
+      },
+      {
+        "path": "dist/decoder/reedsolomon/index.d.ts",
+        "size": 82,
+        "mode": 420
+      },
+      {
+        "path": "dist/decoder/version.d.ts",
+        "size": 351,
+        "mode": 420
+      },
+      {
+        "path": "dist/extractor/index.d.ts",
+        "size": 278,
+        "mode": 420
+      },
+      {
+        "path": "dist/index.d.ts",
+        "size": 762,
+        "mode": 420
+      },
+      {
+        "path": "dist/jsQR.js",
+        "size": 256885,
+        "mode": 420
+      },
+      {
+        "path": "dist/locator/index.d.ts",
+        "size": 312,
+        "mode": 420
+      },
+      {
+        "path": "package.json",
+        "size": 1524,
+        "mode": 420
+      }
+    ],
+    "entryCount": 17,
+    "bundled": []
+  }
+]

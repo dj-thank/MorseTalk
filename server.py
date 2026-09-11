@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent
 APP = ROOT / "app"
 MODELS = {"ja-JP": "vosk-model-small-ja-0.22", "en-US": "vosk-model-small-en-us-0.15"}
 MIME = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json"}
-CSP = "default-src 'self'; script-src 'self' blob:; worker-src 'self' blob:; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+CSP = "default-src 'self'; script-src 'self' blob:; worker-src 'self' blob:; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' wss: ws://127.0.0.1:* ws://localhost:*; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 MAX_AUDIO_BYTES = 700_000
 
 
@@ -172,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Permissions-Policy", "microphone=(self), camera=(), geolocation=()")
+        self.send_header("Permissions-Policy", "microphone=(self), camera=(self), geolocation=()")
         self.send_header("Connection", "close")
         self.end_headers()
         try:

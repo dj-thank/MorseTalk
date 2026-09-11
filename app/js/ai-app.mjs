@@ -6,9 +6,12 @@ import { FastAudio } from './fast-audio.mjs';
 import { aiCapabilities, generateReply } from './ai-client.mjs';
 import { hasNative, nativeCall, setAwake } from './voice.mjs';
 import { createExperience } from './ai-experience.mjs';
+import { createPairingUI } from './pairing-ui.mjs';
+import { OnlineTransport } from './online-transport.mjs';
 const $=id=>document.getElementById(id);
 let audio=null,agent=null,link=null,virtualAgents=[],busy=false,generation=0,testAbort=null,localImport=null;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let pairingUI=null,network=null,scanning=false,manualTurn=false,manualSending=false;
 let experience=null,localState=null,localTimer=null,localRefresh=0,awake=false;
 function pollLocal(){
   if(localTimer||!hasNative()||document.hidden)return;
@@ -39,8 +42,10 @@ function aiOptions(){
   return {model,endpoint:$('endpoint').value,provider:$('provider').value,backend:$('local-backend').value,consent:true};
 }
 function controls(){
-  const running=Boolean(audio||virtualAgents.length||busy||localState?.busy);
-  experience?.lock(running);
+  const running=Boolean(audio||network||scanning||virtualAgents.length||busy||localState?.busy);
+  experience?.lock(running);pairingUI?.lock(running);
+  $('manual-send').disabled=!link||!manualTurn||manualSending;
+  $('manual-compose').hidden=$('dialogue-mode').value!=='manual';
   if(running)pollLocal();
   if(awake!==running){awake=running;setAwake(running);}
   $('listen').disabled=running;$('start').disabled=!agent||!agent.active||agent.history.length>0||Number($('role').value)!==0;
@@ -53,12 +58,12 @@ function controls(){
 }
 function stop(message='停止しました。'){
   if(hasNative())nativeCall('cancelAI',{},1000).then(()=>refreshLocal()).catch(()=>{});
-  ++generation;agent?.stop();agent=null;link?.close();link=null;
+  ++generation;network?.stop();network=null;pairingUI?.stopScan();manualTurn=false;manualSending=false;agent?.stop();agent=null;link?.close();link=null;
   virtualAgents.forEach(a=>a.stop());virtualAgents=[];audio?.stop();audio=null;testAbort?.abort();testAbort=null;busy=false;setAwake(false);$('level').value=0;experience?.finish();status(message);controls();
 }
 function onLinkEvent(e){
   experience?.record(e);
-  if(e.kind==='transmit'){entry('モールス送信',`ターン ${e.seq} · ${e.bytes} bytes${e.attempt?' · 再送':''}`);status('モールス送信 → 相手の受信確認待ち');}
+  if(e.kind==='transmit'){entry(network?'オンライン・モールス送信':'モールス送信',`ターン ${e.seq} · ${e.bytes} bytes${e.attempt?' · 再送':''}`);status(network?'オンライン送信 → 相手の受信確認待ち':'モールス送信 → 相手の受信確認待ち');}
   if(e.kind==='delivered'){entry('受信確認',`ターン ${e.seq} が相手に到達しました。`);status('受信確認済み。相手の応答を待っています。');}
   if(e.kind==='duplicate')entry('重複抑制',`ターン ${e.seq} は受信済み。AIには二重に渡しません。`);
   if(e.kind==='timeout')entry('受信確認待ち',e.attempt?'再送でも応答がありません。':'再送を試みます。');
@@ -69,17 +74,18 @@ function agentEvents(label,opts){return e=>{
   if(e.kind==='thinking')status(`${label} が応答を生成中…`);
   if(e.kind==='generated'){
     entry(`${label} · ターン ${e.seq}`,e.text,'local');$('inference').textContent=`${(e.inferenceMs/1000).toFixed(2)} s`;
-    const b=packFastFrame({...opts,sender:label.endsWith('B')?1:0,seq:e.seq,text:e.text});$('airtime').textContent=`${fastDuration(b,opts).toFixed(3)} s`;
+    const b=packFastFrame({...opts,sender:label.endsWith('B')?1:0,seq:e.seq,text:e.text});$('airtime').textContent=network?`${b.length} B · 音送信なし`:`${fastDuration(b,opts).toFixed(3)} s`;
   }
   if(e.kind==='peer')entry(`相手 · ターン ${e.seq}`,e.text,'peer');
   if(e.kind==='complete'){status('ターン上限に到達。AIの自動応答は終了しました。受信は「すべて停止」で終了します。');controls();}
   if(e.kind==='error'){entry('停止理由',e.message);stop(e.message);}
 };}
 async function beginListening(){
-  const opts=options(),cfg=aiOptions();
-  if(cfg.provider==='litert'&&localState?.installed===false)throw new Error('先にGemmaモデルを取り込んでください。');
-  busy=true;const epoch=++generation;experience.start('microphone');controls();
-  const engine=new FastAudio(opts);audio=engine;
+  const opts=options(),invitation=pairingUI.get(),manual=$('dialogue-mode').value==='manual',cfg=manual?null:aiOptions();
+  if(cfg?.provider==='litert'&&localState?.installed===false)throw new Error('先にGemmaモデルを取り込んでください。');
+  busy=true;const epoch=++generation;experience.start(invitation?'online-encrypted-morse':'microphone');controls();
+  const engine=invitation?new OnlineTransport({invite:invitation,sender:opts.sender,onState:status}):new FastAudio(opts);
+  if(invitation)network=engine;else audio=engine;
   try{
     const actual=await engine.start(e=>{
       if(epoch!==generation)return;
@@ -90,13 +96,17 @@ async function beginListening(){
     });
     if(epoch!==generation){engine.stop();return;}
     const ack=packFastFrame({...opts,seq:1,type:'ack'});
-    link=new ReliableMorseLink({...opts,sendAudio:bytes=>engine.transmit(bytes),ackDelayMs:400,ackTimeoutMs:Math.ceil(fastDuration(ack,opts)*1000+1400),onEvent:onLinkEvent});
-    agent=new MorseAgent({...opts,link,generate:(messages,args)=>generateReply(messages,{...cfg,...args}),onEvent:agentEvents(`AI ${opts.sender?'B':'A'}`,opts)});
-    setAwake(true);entry('マイク受信',`${actual.sampleRate} Hz · ${opts.wpm} WPM · 4,000 Hz。端末外の音を受信します。`);
-    status(opts.sender?'B：受信待機中。Aから会話を開始してください。':'A：受信待機中。「Aから会話を開始」を押してください。');
+    link=new ReliableMorseLink({...opts,sendAudio:bytes=>engine.transmit(bytes),ackDelayMs:invitation?0:400,ackTimeoutMs:invitation?5000:Math.ceil(fastDuration(ack,opts)*1000+1400),onEvent:onLinkEvent});
+    if(manual){
+      manualTurn=opts.sender===0;
+      link.onData=frame=>{entry(`相手 · ターン ${frame.seq}`,frame.text,'peer');experience.record({kind:'peer',seq:frame.seq,text:frame.text,sender:1-opts.sender});manualTurn=frame.seq<opts.maxTurns;status(manualTurn?'受信しました。文章を入力して返信してください。':'ターン上限に到達しました。「すべて停止」で終了します。');controls();};
+    } else agent=new MorseAgent({...opts,link,generate:(messages,args)=>generateReply(messages,{...cfg,...args}),onEvent:agentEvents(`AI ${opts.sender?'B':'A'}`,opts)});
+    setAwake(true);entry(invitation?'オンライン接続':'マイク受信',invitation?'相手との鍵確認済み。暗号化したモールス符号列をネット送受信します。音・マイクは使いません。':`${actual.sampleRate} Hz · ${opts.wpm} WPM · 4,000 Hz。端末外の音を受信します。`);
+    status(manual?(opts.sender?'B：相手の文章を待っています。':'A：文章を入力して送信してください。'):(opts.sender?'B：受信待機中。Aから会話を開始してください。':'A：受信待機中。「Aから会話を開始」を押してください。'));
   }catch(e){if(epoch===generation)stop(e.message);}
   finally{if(epoch===generation){busy=false;controls();}}
 }
+
 function pcmChannel(bytes,opts){
   const frames=[],errors=[],d=new FastMorseDecoder({...opts,sampleRate:48000,onFrame:f=>frames.push(f),onError:e=>errors.push(e)}),a=fastPcm(bytes,{...opts,sampleRate:48000});
   d.push(new Float32Array(1777));
@@ -216,4 +226,20 @@ aiCapabilities().then(c=>{
   else {$('ai-help').textContent=c.remote?'外部HTTPSのAIが設定されています。会話文はこのAIへ送られます。':'同じPCのAIサーバーを使用する設定です。推論先もローカルか確認してください（Ollama: OLLAMA_NO_CLOUD=1）。URL変更はサーバー環境変数です。';}
   experience.refresh();
 }).catch(e=>{$('ai-help').textContent=`${e.message} 単独HTMLの通信自己診断は利用できます。`;});
+
+pairingUI=createPairingUI({options,changed:()=>{experience?.refresh();controls();},error:e=>status(e.message),scanBusy:value=>{scanning=value;controls();}});
+$('dialogue-mode').addEventListener('change',controls);
+$('manual-send').addEventListener('click',async()=>{
+  const current=link,epoch=generation;
+  try{
+    if(!current||!manualTurn||manualSending)throw Error('接続して、相手の応答を待ってください。');
+    const opts=options(),text=$('manual-message').value;
+    if(!text.trim()||new TextEncoder().encode(text).length>opts.maxReplyBytes)throw Error(`本文は${opts.maxReplyBytes} UTF-8バイト以内にしてください。`);
+    const seq=current.nextSend;if(seq>opts.maxTurns)throw Error('ターン上限です。');
+    manualSending=true;manualTurn=false;controls();
+    entry(`この端末 · ターン ${seq}`,text,'local');experience.record({kind:'generated',seq,text,sender:opts.sender});await current.send(text,seq);
+    if(epoch===generation){$('manual-message').value='';status('相手への到達を確認しました。返信を待っています。');}
+  }catch(e){if(epoch===generation)stop(e.message);}
+  finally{if(epoch===generation){manualSending=false;controls();}}
+});
 controls();

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+- Offline QR creation/PNG export/camera scanning/image import with explicit preview and confirmation.
+- Two-party encrypted online Morse symbols, invite expiry, nonce proof, replay rejection and bounded relay.
+- Manual online text/emoji exchange without a model, or existing Gemma automatic conversation.
+- Docker+Caddy self-hosted relay; no preconfigured or operated public relay.
+- Camera permission scoping and track cleanup, no automatic AI/capture/connect on QR scan.
+- Portable bundler uses callback replacement to preserve literal dollar sequences in vendored scripts.
+- Real QR, virtual-camera, encrypted loopback, browser and exact-APK regression harnesses.
+
+
 ## 0.3.1
 - Add readiness checklist, pairing-code validation, editable topic presets, reachable stop and session counters.
 - Show native copy progress and free storage; preserve busy state until native work really exits.
