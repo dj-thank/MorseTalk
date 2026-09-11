@@ -87,7 +87,8 @@ def main(real_ai=False):
         process.terminate()
         try:process.communicate(timeout=5)
         except subprocess.TimeoutExpired:process.kill();process.communicate()
-        (OUT/('online-real-gemma.json' if real_ai else 'online-browser.json')).write_text(json.dumps(report,ensure_ascii=False,indent=2))
+        (OUT/('online-real-gemma.json' if real_ai else 'online-browser.json')).write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
         print(json.dumps(report,ensure_ascii=False,indent=2),flush=True)
 if __name__=='__main__':
+    if hasattr(sys.stdout,'reconfigure'):sys.stdout.reconfigure(encoding='utf-8',errors='replace')
     parser=argparse.ArgumentParser();parser.add_argument('--real-ai',action='store_true');main(parser.parse_args().real_ai)

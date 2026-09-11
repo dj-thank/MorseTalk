@@ -29,8 +29,9 @@ async function waitFor(fn,description,timeout=30000){
 async function click(page,selector){
   const locator=page.locator(selector);
   await waitFor(async()=>await locator.isEnabled(),`enabled ${selector}`);
-  // The Android integration dispatches touch input to the actual WebView.
-  if(page===phone)await locator.tap();else await locator.click();
+  // Drive the actual desktop/WebView DOM through browser-dispatched pointer input.
+  // Native touch coordinates are tested separately by Android instrumentation.
+  await locator.click();
 }
 async function startDesktop(){
   server=spawn(process.env.PYTHON||'python3',['server.py','--port','0','--no-browser','--ai'],{
@@ -48,7 +49,7 @@ async function prepare(page,isAI){
   await page.locator('#dialogue-mode').selectOption(isAI?'ai':'manual');
   // Wait for the native/default capability callback before setting the explicit provider.
   if(page===phone){
-    await waitFor(()=>page.locator('#provider').isEnabled(),'native capability startup');
+    await waitFor(async()=>await page.locator('#provider').isEnabled() && (await page.locator('#ai-help').textContent()).includes('LiteRT-LM'),'native capability startup');
     await page.locator('#provider').selectOption(localGemma?'litert':'ollama');
     if(!localGemma){await page.locator('#endpoint').fill('http://127.0.0.1:11434/api/chat');await page.locator('#model').fill(MODEL);}
   }else await page.locator('#model').fill(MODEL);
@@ -145,7 +146,7 @@ async function aiCase(){
     report.model=MODEL;report.modelDigest=inventory.models.find(m=>m.name===MODEL).digest;
     await manualCase(false);await manualCase(true);await mixedCase();await aiCase();
     assert.equal(errors.length,0,JSON.stringify(errors));report.pageErrors=errors;report.ok=true;
-  }catch(error){report.error=String(error);report.pageErrors=errors;process.exitCode=1;console.error(String(error));}
+  }catch(error){report.error=String(error).replace(/MTO1\.[A-Za-z0-9_-]+/g,'[REDACTED_INVITATION]');report.pageErrors=errors;process.exitCode=1;console.error(report.error);}
   finally{
     // No invitation text, secrets or live QR pixels enter evidence.
     for(const [page,side] of [[desktop,'desktop'],[phone,'android']])if(page){

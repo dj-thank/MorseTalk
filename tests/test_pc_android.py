@@ -77,6 +77,10 @@ class BridgeTests(unittest.TestCase):
         self.bridge.detach()
 
 class SessionTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        # The integration's human instructions are not the object of these tests.
+        self.output=patch('builtins.print');self.output.start();self.addCleanup(self.output.stop)
+
     async def test_real_loopback_relay_and_owned_cleanup(self):
         from websockets.asyncio.client import connect
         with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]

@@ -7,7 +7,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-py -3 tools\pc_android.py %*
+py -3 -X utf8 tools\pc_android.py %*
 set "result=%errorlevel%"
 if not "%result%"=="0" pause
 exit /b %result%
