@@ -40,7 +40,12 @@ async (config) => {
         if(e.kind==='frame') {
           event(side,{kind:'decoded',seq:e.frame.seq,type:e.frame.type,text:e.frame.text});
           links[side]?.receive(e.frame).catch(err=>{fatal=String(err);});
-        } else if(e.kind==='fatal'||e.kind==='error')event(side,e);
+        } else if(e.kind==='error') {
+          // The shipped UI reports a corrupt received packet but leaves the link
+          // alive for its bounded ARQ retry. Do not turn a recoverable DSP error
+          // into a harness-only session abort; retain it in the evidence.
+          event(side,{...e,kind:'decoder-error',recoverable:true});
+        } else if(e.kind==='fatal')event(side,e);
       });
       event(side,{kind:'audio-started',...actual});
     }
@@ -93,6 +98,8 @@ async (config) => {
     AudioNode.prototype.connect=originalConnect;
     sinks.forEach(s=>s.stream.getTracks().forEach(t=>t.stop()));
     await Promise.all(contexts.map(c=>c.state==='closed'?null:c.close().catch(()=>{})));
+    result.decoderErrors=events.filter(e=>e.kind==='decoder-error').length;
+    result.retransmissions=events.filter(e=>e.kind==='transmit'&&e.attempt>0).length;
     result.elapsedMs=performance.now()-started;
     result.captureTracksEnded=captures.every(s=>s.getTracks().every(t=>t.readyState==='ended'));
   }
