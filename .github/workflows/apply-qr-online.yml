@@ -1,0 +1,87 @@
+name: Apply verified QR and online source once
+on:
+  push:
+    paths: ['.github/workflows/apply-qr-online.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/feat/qr-online'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Recover the complete verified source and pinned offline QR dependencies
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,os,subprocess,tempfile,urllib.request
+          from pathlib import Path,PurePosixPath
+          shas=['4bd20ecb46ec5a68664a5d93c95379567a8c1a5e','13581cfd1c9200868633a0f4ff0ceff7728b0fff','7324b8d1671327da423688bf9d17d10ea9b646b7','7a459f7301352966b10f99b76d45e56b4e908a54','35e70cf5b11deef6486559937dcefa29c90b25e4','03bada4c09df1a58b04934b5d8a7f0a2a61edc51']
+          chunks=[]
+          for sha in shas:
+              req=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=30) as r: obj=json.load(r)
+              chunk=base64.b64decode(obj['content'])
+              assert hashlib.sha1(b'blob '+str(len(chunk)).encode()+b'\0'+chunk).hexdigest()==sha
+              chunks.append(chunk)
+          packed=b''.join(chunks)
+          assert len(packed)==33860 and hashlib.sha256(packed).hexdigest()=='d2e8e1b2b4c80200636d6190aa34264dc11cc916556ba1cf3d79fa2549686c3c'
+          dec=lzma.LZMADecompressor(memlimit=128*1024*1024)
+          raw=dec.decompress(packed,max_length=200000)
+          assert dec.eof and not dec.unused_data and len(raw)==117499
+          payload=json.loads(raw)
+          assert set(payload)=={'new','preimages','patch'}
+          def safe(name):
+              p=PurePosixPath(name)
+              assert str(p)==name and not p.is_absolute() and not any(x in ('..','.git') for x in p.parts) and '\\' not in name and ':' not in name
+              assert p.parts[0] in ('android','app','docs','relay','tests','tools','scripts') or name in ('CHANGELOG.md','Dockerfile','README.md','THIRD_PARTY_NOTICES.md','package.json','server.py','.github/workflows/verification.yml')
+              for parent in (Path(name),*Path(name).parents):assert not parent.is_symlink()
+          for name,sha in payload['preimages'].items():
+              safe(name)
+              assert subprocess.check_output(['git','hash-object','--',name],text=True).strip()==sha,name
+          patch=payload['patch'].encode('utf-8')
+          stat=subprocess.run(['git','apply','--unidiff-zero','--numstat','-'],input=patch,stdout=subprocess.PIPE,check=True).stdout.decode()
+          assert {line.split('\t',2)[2] for line in stat.splitlines()}==set(payload['preimages'])
+          for name,obj in payload['new'].items():
+              safe(name)
+              assert set(obj)=={'before','after','text'} and isinstance(obj['text'],str)
+              assert hashlib.sha256(obj['text'].encode()).hexdigest()==obj['after'],name
+              if obj['before'] is None:assert not Path(name).exists(),name
+              else:
+                  assert name=='.github/workflows/verification.yml'
+                  assert subprocess.check_output(['git','hash-object','--',name],text=True).strip()==obj['before'],name
+          subprocess.run(['git','apply','--unidiff-zero','--check','--index','-'],input=patch,check=True)
+          # Fixed package versions, no npm lifecycle scripts, and exact file digests.
+          vendor={
+              'app/vendor/qrcode.js':('encoder/package/qrcode.js','18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780'),
+              'app/vendor/jsQR.js':('decoder/package/dist/jsQR.js','bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859'),
+              'app/licenses/qrcode-generator-README.txt':('encoder/package/README.md','e2e665eb157725a8543c37951b064f58c564eb38f8507bf34309c39f58db6003'),
+              'app/licenses/jsQR.txt':('decoder/package/LICENSE','c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08')}
+          with tempfile.TemporaryDirectory() as d:
+              root=Path(d)
+              packs=subprocess.check_output(['npm','pack','--ignore-scripts','--json','qrcode-generator@1.4.4','jsqr@1.4.0'],cwd=root)
+              for folder,archive in [('encoder','qrcode-generator-1.4.4.tgz'),('decoder','jsqr-1.4.0.tgz')]:
+                  (root/folder).mkdir()
+                  subprocess.run(['tar','-xzf',str(root/archive),'-C',str(root/folder)],check=True)
+              extra={name:(root/source).read_bytes() for name,(source,sha) in vendor.items()}
+              for name,data in extra.items():
+                  safe(name);assert not Path(name).exists()
+                  assert hashlib.sha256(data).hexdigest()==vendor[name][1]
+              extra['docs/QR-LIBRARY-PROVENANCE.json']=packs
+              assert not Path('docs/QR-LIBRARY-PROVENANCE.json').exists()
+          # All parsing, preimages and hashes passed before modifying source.
+          subprocess.run(['git','apply','--unidiff-zero','--index','-'],input=patch,check=True)
+          for name,obj in payload['new'].items():
+              p=Path(name);p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(obj['text'].encode())
+          for name,data in extra.items():
+              p=Path(name);p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)
+          subprocess.run(['git','add','--',*payload['new'],*extra],check=True)
+          subprocess.run(['git','-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','Add offline QR pairing, authenticated encrypted online Morse, bounded relay, manual chat and runtime tests'],check=True)
+          subprocess.run(['git','push','origin','HEAD:feat/qr-online'],check=True)
+          print('Complete source applied; remote runtime results are not yet claimed.')
+          PY
