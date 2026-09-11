@@ -1,0 +1,43 @@
+name: Apply verified Gemma source patch once
+on:
+  push:
+    paths: ['.github/workflows/apply-gemma-source.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/feat/gemma4-e2b-local'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify complete source patch and atomically commit ordinary tracked source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,os,subprocess,urllib.request
+          from pathlib import Path
+          chunks=[]
+          for sha in ['e41f6825738f2f1f69540049f75940f99b2a6044','c84d4ccdd1e421a0dd6d7501023faee8fca53759','81484bbcf46a7cbbb7773609bab47312cc133daf']:
+              req=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=30) as response: data=json.load(response)
+              chunk=base64.b64decode(data['content'])
+              assert hashlib.sha1(b'blob '+str(len(chunk)).encode()+b'\0'+chunk).hexdigest()==sha
+              chunks.append(chunk)
+          packed=b''.join(chunks)
+          assert len(packed)==18488 and hashlib.sha256(packed).hexdigest()=='2d3278c179be483a33b70c8b1f01e2e1aa52f495267a6a17d68719da0031e797'
+          decoder=lzma.LZMADecompressor(memlimit=128*1024*1024)
+          raw=decoder.decompress(packed,max_length=200000)
+          assert decoder.eof and not decoder.unused_data
+          assert len(raw)==63155 and hashlib.sha256(raw).hexdigest()=='ca52d15e4ecff43f53d403ae31ecbb062f58f60fcb48d06175fde41e2a2acef9'
+          allowed={'.dockerignore','.gitignore','ai_service.py','android/app/build.gradle','android/app/src/androidTest/java/jp/morsetalk/app/SmokeInstrumentation.java','android/app/src/main/AndroidManifest.xml','android/app/src/main/java/jp/morsetalk/app/LocalGemma.kt','android/app/src/main/java/jp/morsetalk/app/MainActivity.java','android/build.gradle','app/ai.html','app/js/ai-app.mjs','app/js/ai-client.mjs','package.json','tests/test_gemma4.py','tools/android_local_gemma.sh','tools/android_smoke.sh','tools/audio_pair.mjs','tools/download_gemma4.py','tools/start_ci_model.sh','tools/test_ai_ui.py','tools/test_audio_pair.py','tools/test_real_ai.py'}
+          stat=subprocess.run(['git','apply','--numstat','-'],input=raw,check=True,stdout=subprocess.PIPE).stdout.decode()
+          names={line.split('\t',2)[2] for line in stat.splitlines()}
+          assert names==allowed
+          subprocess.run(['git','apply','--check','--index','-'],input=raw,check=True)
+          subprocess.run(['git','apply','--index','-'],input=raw,check=True)
+          subprocess.run(['git','-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','Implement Gemma 4 E2B: Android LiteRT-LM, local model import, cancellation, history cache and real-model tests'],check=True)
+          subprocess.run(['git','push','origin','HEAD:feat/gemma4-e2b-local'],check=True)
+          print('Applied complete source patch. Build and real inference are separate subsequent checks.')
+          PY
