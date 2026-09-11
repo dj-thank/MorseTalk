@@ -1,5 +1,5 @@
 FROM node:22-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv openssl && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
 COPY relay/requirements.txt /tmp/relay-requirements.txt
 RUN python3 -m venv /opt/testenv && /opt/testenv/bin/pip install --no-cache-dir -r /tmp/relay-requirements.txt
