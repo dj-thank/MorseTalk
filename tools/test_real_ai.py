@@ -6,7 +6,7 @@ import urllib.request
 from browser_support import OUT
 from test_audio_pair import run_pair
 if __name__=='__main__':
-    model=os.environ.get('MORSETALK_AI_MODEL','qwen2.5:0.5b')
+    model=os.environ.get('MORSETALK_AI_MODEL','gemma4:e2b-it-qat')
     os.environ['MORSETALK_AI_MODEL']=model
     os.environ['MORSETALK_AI_ENABLED']='1'
     with urllib.request.urlopen('http://127.0.0.1:11434/api/tags',timeout=10) as response:

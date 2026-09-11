@@ -6,7 +6,7 @@ import { FastAudio } from './fast-audio.mjs';
 import { aiCapabilities, generateReply } from './ai-client.mjs';
 import { hasNative, nativeCall, setAwake } from './voice.mjs';
 const $=id=>document.getElementById(id);
-let audio=null,agent=null,link=null,virtualAgents=[],busy=false,generation=0,testAbort=null;
+let audio=null,agent=null,link=null,virtualAgents=[],busy=false,generation=0,testAbort=null,localImport=null;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function status(text){$('status').textContent=text;}
 function entry(label,text,kind='event'){
@@ -27,16 +27,19 @@ function options(){
 function aiOptions(){
   if(!$('consent').checked)throw new Error('会話文をAIに渡すことを許可してください。');
   const model=$('model').value.trim();if(!model)throw new Error('導入済みモデル名を入力してください。');
-  return {model,endpoint:$('endpoint').value,provider:$('provider').value,consent:true};
+  return {model,endpoint:$('endpoint').value,provider:$('provider').value,backend:$('local-backend').value,consent:true};
 }
 function controls(){
   const running=Boolean(audio||virtualAgents.length||busy);
   $('listen').disabled=running;$('start').disabled=!agent||!agent.active||agent.history.length>0||Number($('role').value)!==0;
   $('stop').disabled=!running;$('self-test').disabled=running;$('ai-pair').disabled=running;$('test-ai').disabled=running;$('export-fast').disabled=running;
   for(const id of ['role','speed','room','session','model','goal','topic','turns','max-bytes','volume','consent'])$(id).disabled=running;
-  if(hasNative()){ $('endpoint').disabled=running;$('provider').disabled=running; }
+  if(hasNative()){ $('endpoint').disabled=running||$('provider').value==='litert';$('provider').disabled=running; }
+  for(const id of ['import-model','load-model','unload-model','local-backend'])$(id).disabled=running;
+  if($('provider').value==='litert')$('model').disabled=true;
 }
 function stop(message='停止しました。'){
+  if(hasNative())nativeCall('cancelAI',{},1000).catch(()=>{});
   ++generation;agent?.stop();agent=null;link?.close();link=null;
   virtualAgents.forEach(a=>a.stop());virtualAgents=[];audio?.stop();audio=null;testAbort?.abort();testAbort=null;busy=false;setAwake(false);$('level').value=0;status(message);controls();
 }
@@ -132,14 +135,59 @@ async function exportWav(){
 function handle(id,fn){$(id).addEventListener('click',()=>{Promise.resolve().then(fn).catch(e=>{status(e.message);entry('操作エラー',e.message);});});}
 handle('listen',beginListening);handle('start',async()=>{if(agent){$('start').disabled=true;await agent.start($('topic').value);controls();}});handle('stop',()=>stop());handle('self-test',selfTest);handle('test-ai',testAI);handle('ai-pair',aiPair);handle('export-fast',exportWav);handle('clear',()=>{$('transcript').replaceChildren();});
 $('role').addEventListener('change',controls);
-$('provider').addEventListener('change',()=>{if(hasNative())$('endpoint').value=$('provider').value==='ollama'?'http://127.0.0.1:11434/api/chat':'http://127.0.0.1:8080/v1/chat/completions';});
+function providerChanged(){
+  const local=hasNative()&&$('provider').value==='litert';
+  $('local-model-controls').hidden=!local;
+  if(local){$('endpoint').value='端末内 · ネット接続なし';$('model').value='gemma-4-E2B-it.litertlm';}
+  else if(hasNative()){$('endpoint').value=$('provider').value==='ollama'?'http://127.0.0.1:11434/api/chat':'http://127.0.0.1:8080/v1/chat/completions';$('model').value=$('provider').value==='ollama'?'gemma4:e2b-it-qat':'';}
+  controls();
+}
+$('provider').addEventListener('change',providerChanged);
+async function refreshLocal(){
+  if(!hasNative())return;
+  const c=await nativeCall('localModelStatus',{},5000);
+  $('local-model-status').textContent=c.description;
+}
+handle('import-model',async()=>{
+  if(!hasNative())throw new Error('Androidアプリで使用してください。');
+  if(localImport)throw new Error('モデルの選択・取り込みは開始済みです。');
+  // The picker pauses the Activity. Its return event starts the cancellable copy state.
+  const operation={epoch:null};localImport=operation;$('import-model').disabled=true;
+  try{
+    const c=await nativeCall('importModel',{},600000);
+    if(operation.epoch===null||operation.epoch===generation)$('local-model-status').textContent=c.description;
+  }catch(e){
+    if(operation.epoch===null||operation.epoch===generation){nativeCall('cancelAI',{},1000).catch(()=>{});throw e;}
+  }finally{
+    if(localImport===operation)localImport=null;
+    if(operation.epoch!==null&&operation.epoch===generation){busy=false;status('モデル取り込み処理が終了しました。');}
+    controls();
+  }
+});
+handle('load-model',async()=>{
+  const cfg=aiOptions(),epoch=++generation;busy=true;controls();status('Gemma 4 E2Bを端末内で読み込み中…');
+  try{const r=await nativeCall('loadModel',cfg,95000);if(epoch===generation){$('local-model-status').textContent=r.description;status('モデル読み込み完了。会話開始時には再利用します。');}}
+  catch(e){nativeCall('cancelAI',{},1000).catch(()=>{});throw e;}
+  finally{if(epoch===generation){busy=false;controls();}}
+});
+handle('unload-model',async()=>{
+  const epoch=++generation;busy=true;controls();status('モデルを解放しています…');
+  try{await nativeCall('unloadModel',{},95000);if(epoch===generation){await refreshLocal();status('モデルをメモリから解放しました。');}}
+  catch(e){if(epoch===generation){nativeCall('cancelAI',{},1000).catch(()=>{});throw e;}}
+  finally{if(epoch===generation){busy=false;controls();}}
+});
+addEventListener('morsetalk-local-import-start',()=>{
+  if(!localImport||localImport.epoch!==null)return;
+  localImport.epoch=++generation;busy=true;controls();status('モデルを端末内に取り込み中…「すべて停止」で中断できます。');
+});
+addEventListener('morsetalk-local-model',()=>{refreshLocal().catch(()=>{});});
 addEventListener('pagehide',()=>stop('画面を離れたため停止しました。'));
 addEventListener('morsetalk-native-pause',()=>stop('画面を離れたため停止しました。'));
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stop('画面が非表示になったため停止しました。');});
 aiCapabilities().then(c=>{
   if(c.portable){$('ai-help').textContent=c.description;return;}
   $('provider').value=c.provider;$('endpoint').value=c.endpoint;$('model').value=c.model||'';
-  if(c.native){$('endpoint').disabled=false;$('provider').disabled=false;$('ai-help').textContent='Android：端末内AIのループバック、または明示指定のHTTPSを使用します。USB接続のWindows AIには adb reverse が使えます。モデルは別途必要です。';}
+  if(c.native){providerChanged();refreshLocal().catch(()=>{});$('ai-help').textContent='Gemma 4 E2BをLiteRT-LMで端末内実行します。モデルファイルは別途必要です。失敗してもクラウドや別モデルへ切り替えません。Ollama接続は明示的に選択できます。';}
   else $('ai-help').textContent=c.remote?'外部HTTPSのAIが設定されています。会話文はこのAIへ送られます。':'同じPCのAIサーバーを使用する設定です。推論先もローカルか確認してください（Ollama: OLLAMA_NO_CLOUD=1）。URL変更はサーバー環境変数です。';
 }).catch(e=>{$('ai-help').textContent=`${e.message} 単独HTMLの通信自己診断は利用できます。`;});
 controls();

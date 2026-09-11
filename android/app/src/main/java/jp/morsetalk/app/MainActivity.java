@@ -48,12 +48,13 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final String ORIGIN = "https://" + HOST;
-    private static final int MICROPHONE = 10, SAVE_FILE = 11, OPEN_FILE = 12;
+    private static final int MICROPHONE = 10, SAVE_FILE = 11, OPEN_FILE = 12, IMPORT_MODEL = 13;
     private static final int MAX_SAVE = 20 * 1024 * 1024;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService fileWorker = Executors.newSingleThreadExecutor();
     private final AiClient aiClient = new AiClient();
-    private String aiId;
+    private String aiId, importModelId;
+    private LocalGemma localGemma;
     private WebView web;
     private TextToSpeech tts;
     private boolean ttsReady, foreground, destroyed;
@@ -68,6 +69,7 @@ public final class MainActivity extends Activity {
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        localGemma = new LocalGemma(getApplicationContext());
         FrameLayout layout = new FrameLayout(this);
         web = new WebView(this);
         layout.addView(web, new FrameLayout.LayoutParams(-1, -1));
@@ -216,7 +218,38 @@ public final class MainActivity extends Activity {
                             if (!foreground || !(ORIGIN + "/ai.html").equals(web.getUrl())) throw new IllegalStateException("AI画面を開いてください。");
                             if (aiId != null) throw new IllegalStateException("AIが処理中です。");
                             final String requestId = id;
-                            aiClient.chat(params, (result, error) -> ui.post(() -> {
+                            LocalGemma.Callback callback = (result, error) -> ui.post(() -> {
+                                if (requestId.equals(aiId)) { aiId = null; reply(requestId, result, error); }
+                            });
+                            if ("litert".equals(params.optString("provider"))) localGemma.chat(params, callback);
+                            else aiClient.chat(params, callback::done);
+                            aiId = id; break;
+                        }
+                        case "aiCapabilities":
+                            reply(id, new JSONObject().put("native", true).put("provider", "litert")
+                                .put("model", LocalGemma.MODEL).put("endpoint", "").put("remote", false), null); break;
+                        case "localModelStatus": reply(id, localGemma.status(), null); break;
+                        case "importModel": {
+                            if (!foreground || !(ORIGIN + "/ai.html").equals(web.getUrl()) || aiId != null || importModelId != null)
+                                throw new IllegalStateException("AI画面で実行中の操作を停止してください。");
+                            importModelId = id;
+                            Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+                            try { startActivityForResult(picker, IMPORT_MODEL); }
+                            catch (RuntimeException ex) { importModelId = null; throw ex; }
+                            break;
+                        }
+                        case "loadModel": {
+                            if (!foreground || aiId != null) throw new IllegalStateException("別のAI処理が実行中です。");
+                            final String requestId = id;
+                            localGemma.preload(params, (result, error) -> ui.post(() -> {
+                                if (requestId.equals(aiId)) { aiId = null; reply(requestId, result, error); }
+                            }));
+                            aiId = id; break;
+                        }
+                        case "unloadModel": {
+                            if (!foreground || aiId != null) throw new IllegalStateException("先にAIを停止してください。");
+                            final String requestId = id;
+                            localGemma.unload((result, error) -> ui.post(() -> {
                                 if (requestId.equals(aiId)) { aiId = null; reply(requestId, result, error); }
                             }));
                             aiId = id; break;
@@ -230,6 +263,7 @@ public final class MainActivity extends Activity {
     }
     private void cancelAI() {
         aiClient.cancel();
+        if (localGemma != null) localGemma.cancel();
         if (aiId != null) { String id = aiId; aiId = null; reply(id, null, "AI生成をキャンセルしました。"); }
     }
     private String language(JSONObject params) throws JSONException {
@@ -351,7 +385,20 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == OPEN_FILE && fileChooser != null) {
+        if (requestCode == IMPORT_MODEL && importModelId != null) {
+            String id = importModelId; importModelId = null;
+            Uri uri = data == null ? null : data.getData();
+            if (resultCode != RESULT_OK || uri == null) { reply(id, null, "モデル取り込みをキャンセルしました。"); return; }
+            try {
+                if (aiId != null) throw new IllegalStateException("別のAI処理が実行中です。");
+                localGemma.importModel(uri, (result, error) -> ui.post(() -> {
+                    if (id.equals(aiId)) { aiId = null; reply(id, result, error); }
+                    if (!destroyed && web != null) web.evaluateJavascript("window.dispatchEvent(new Event('morsetalk-local-model'));", null);
+                }));
+                aiId = id;
+                web.evaluateJavascript("window.dispatchEvent(new Event('morsetalk-local-import-start'));", null);
+            } catch (Exception ex) { reply(id, null, ex.getMessage()); }
+        } else if (requestCode == OPEN_FILE && fileChooser != null) {
             fileChooser.onReceiveValue(resultCode == RESULT_OK && data != null && data.getData() != null ? new Uri[]{data.getData()} : null); fileChooser = null;
         } else if (requestCode == SAVE_FILE && saveId != null) {
             String id = saveId; byte[] bytes = saveBytes; saveId = null; saveBytes = null;
@@ -380,6 +427,8 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {
         cancelAI(); aiClient.close();
+        if (localGemma != null) localGemma.close();
+        importModelId = null;
         cancelRecognition("アプリを終了しました。"); stopSpeaking(); destroyed = true;
         if (tts != null) { tts.shutdown(); tts = null; }
         if (fileChooser != null) { fileChooser.onReceiveValue(null); fileChooser = null; }

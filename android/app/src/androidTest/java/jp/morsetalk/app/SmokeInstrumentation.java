@@ -54,9 +54,11 @@ public final class SmokeInstrumentation extends Instrumentation {
                 if(shot==null)throw new AssertionError("Screenshot unavailable");
                 shot.compress(Bitmap.CompressFormat.PNG,100,out);shot.recycle();
             }
+            checkLocalValidation();
+            if (arguments != null && "true".equals(arguments.getString("local_model", "false"))) checkNativeGemma();
             String model=arguments==null?"":arguments.getString("model","");
             if(!model.isEmpty()) {
-                js("document.querySelector('#model').value="+JSONObject.quote(model)+";document.querySelector('#consent').checked=true;document.querySelector('#test-ai').click();true");
+                js("document.querySelector('#provider').value='ollama';document.querySelector('#provider').dispatchEvent(new Event('change'));document.querySelector('#model').value="+JSONObject.quote(model)+";document.querySelector('#consent').checked=true;document.querySelector('#test-ai').click();true");
                 waitJs("document.querySelector('#status').textContent.includes('AI APIから文章を受信')",120000);
                 report.put("real_ai_bridge_tested",true).put("model",model);
                 check("Android Java HttpURLConnection -> actual local LLM -> native result event",js("document.querySelector('#transcript').textContent"));
@@ -79,6 +81,35 @@ public final class SmokeInstrumentation extends Instrumentation {
             result.putString("stream",(ok?"MORSETALK_SMOKE_OK":"MORSETALK_SMOKE_FAILED")+"\n"+report.toString()+"\n");
             finish(ok?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);
         }
+    }
+    private void checkLocalValidation() throws Exception {
+        LocalGemma.validateMessages(new JSONArray("[{\"role\":\"user\",\"content\":\"こんにちは\"}]"));
+        for (String bad : new String[]{"[]", "[{\"role\":\"tool\",\"content\":\"bad\"}]", "[{\"role\":\"assistant\",\"content\":\"bad\"}]", "[{\"role\":\"user\",\"content\":\"\"}]"}) {
+            boolean rejected=false;
+            try { LocalGemma.validateMessages(new JSONArray(bad)); } catch(IllegalArgumentException expected) { rejected=true; }
+            if(!rejected)throw new AssertionError("Invalid local conversation accepted: "+bad);
+        }
+        check("Local engine validates roles, empty input and user-final history",true);
+        require("document.querySelector('#provider').value==='litert' && document.querySelector('#endpoint').disabled", "Android must default to on-device Gemma, not an HTTP server");
+        check("Android defaults to local Gemma with no HTTP endpoint",true);
+    }
+    private void checkNativeGemma() throws Exception {
+        report.put("real_local_gemma_tested",false);
+        js("window.nativeProof=null;(async()=>{try{const {nativeCall}=await import('https://appassets.androidplatform.net/js/voice.mjs');const cfg={model:'gemma-4-E2B-it.litertlm',provider:'litert',backend:'cpu',consent:true};const state=await nativeCall('localModelStatus',{},5000);if(!state.installed)throw Error('Real Gemma file missing');let denied=false;try{await nativeCall('aiChat',{...cfg,consent:false,messages:[{role:'user',content:'test'}]},5000);}catch(e){denied=true;}if(!denied)throw Error('Consent was not enforced');const loaded=await nativeCall('loadModel',cfg,240000);const messages=[{role:'system',content:'日本語で15文字以内の一文だけを返す。防災用品を一つ具体的に提案。思考や前置きは不要。'},{role:'user',content:'何を準備する？'}];const a=await nativeCall('aiChat',{...cfg,messages},95000);messages.push({role:'assistant',content:a.text},{role:'user',content:'他には？'});const b=await nativeCall('aiChat',{...cfg,messages},95000);if(a.reusedConversation||!b.reusedConversation)throw Error('KV history reuse condition failed');if(!a.text||!b.text||a.provider!=='litert'||b.remote!==false)throw Error('Not a local text response');window.nativeProof={ok:true,loaded,turns:[a,b],consentRejected:denied};}catch(e){window.nativeProof={ok:false,error:String(e)};}})();true");
+        waitJs("window.nativeProof!==null",480000);
+        require("window.nativeProof.ok", "Actual local Gemma failed: "+js("JSON.stringify(nativeProof)"));
+        report.put("local_gemma",new JSONObject(new JSONArray("["+js("JSON.stringify(nativeProof)")+"]").getString(0)));
+        check("Actual LiteRT-LM model load, two real replies and exact-prefix KV reuse",js("JSON.stringify(nativeProof)"));
+        js("document.querySelector('#consent').checked=true;document.querySelector('#turns').value=4;document.querySelector('#speed').value=1200;document.querySelector('#goal').value='防災用品を一つずつ、日本語15文字以内の短い一文で具体的に提案。';document.querySelector('#topic').value='何を準備する？';document.querySelector('#clear').click();document.querySelector('#ai-pair').click();true");
+        waitJs("document.querySelector('#status').textContent.includes('PCM仮想経路テストが終了')",420000);
+        require("document.querySelector('#transcript').textContent.split('数値処理で復号').length-1===4", "Native 4-turn PCM exchange incomplete");
+        check("Four on-device Gemma turns through real PCM encoding/decoding (not real-time acoustics)",js("document.querySelector('#transcript').textContent"));
+        // Real model is running. Cancel it, require rejection, then wait for native work to exit.
+        js("window.cancelProof=null;(async()=>{const {nativeCall}=await import('https://appassets.androidplatform.net/js/voice.mjs');const cfg={model:'gemma-4-E2B-it.litertlm',provider:'litert',backend:'cpu',consent:true,messages:[{role:'user',content:'一から百まで順に説明してください。'}]};let outcome='pending';const pending=nativeCall('aiChat',cfg,95000).then(()=>outcome='completed',()=>outcome='cancelled');await new Promise(r=>setTimeout(r,20));await nativeCall('cancelAI',{},5000);await pending;for(let i=0;i<600;i++){const s=await nativeCall('localModelStatus',{},5000);if(!s.busy){window.cancelProof={outcome,busy:s.busy};return;}await new Promise(r=>setTimeout(r,100));}window.cancelProof={error:'Native work never exited'};})().catch(e=>window.cancelProof={error:String(e)});true");
+        waitJs("window.cancelProof!==null",90000);
+        require("window.cancelProof.outcome==='cancelled' && window.cancelProof.busy===false", "Native cancellation failed: "+js("JSON.stringify(cancelProof)"));
+        check("Actual native generation cancels; late output rejected and worker released",js("JSON.stringify(cancelProof)"));
+        report.put("real_local_gemma_tested",true);
     }
     private void check(String name,Object detail)throws Exception {checks.put(new JSONObject().put("name",name).put("detail",detail));Bundle b=new Bundle();b.putString("stream","PASS: "+name+"\n");sendStatus(0,b);}
     private WebView findWeb(View view) {if(view instanceof WebView)return (WebView)view;if(view instanceof ViewGroup){ViewGroup g=(ViewGroup)view;for(int i=0;i<g.getChildCount();i++){WebView w=findWeb(g.getChildAt(i));if(w!=null)return w;}}return null;}

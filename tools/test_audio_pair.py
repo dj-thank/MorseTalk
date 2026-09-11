@@ -14,7 +14,7 @@ def run_pair(*, real_ai=False, model=''):
         page.evaluate('config => {const b=document.createElement("button");b.id="proof-start";b.textContent="Start runtime proof";b.onclick=()=>{window.proof=null;window.runAudioPair(config).then(x=>window.proof=x).catch(e=>window.proof={ok:false,error:String(e)});};document.body.append(b);}', {'realAI':real_ai,'model':model,'wpm':1200})
         page.locator('#proof-start').click()
         try:
-            wait_js(page, '() => window.proof !== null && window.proof !== undefined', timeout_ms=270000 if real_ai else 75000)
+            wait_js(page, '() => window.proof !== null && window.proof !== undefined', timeout_ms=390000 if real_ai else 75000)
             result=page.evaluate('() => window.proof')
         except Exception as exc:
             result={'ok':False,'error':str(exc),'physicalDevices':False,'realAI':real_ai}
