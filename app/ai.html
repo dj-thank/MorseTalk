@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="morsetalk-token" content="__MORSETALK_TOKEN__"><title>MorseTalk · AI Link</title><link rel="icon" href="icon.svg"><link rel="stylesheet" href="ai.css"></head>
 <body><main>
-<header><a href="index.html" class="brand">MorseTalk <span>0.5.0</span></a><span class="badge">AI LINK · 実験版</span></header>
+<header><a href="index.html" class="brand">MorseTalk <span>0.5.1</span></a><span class="badge">AI LINK · 実験版</span></header>
 <section class="hero"><p class="eyebrow">AI ↔ MORSE ↔ MORSE ↔ AI</p><h1>Gemma同士で、いろいろ話そう。</h1><p>AIの文章を直接符号化。日本語もそのまま復元し、相手のAIへ。音響パケットに人間向けの読み上げ・音声認識は使いません。</p><div class="signal" aria-hidden="true"><i></i><i></i><i class="dash"></i><i></i><i class="dash"></i><i class="dash"></i><i></i><i></i><i class="dash"></i><i></i><i class="dash"></i><i></i></div></section>
 <div class="notice"><strong>速度の数字は、実機の保証値ではありません。</strong> 120 / 300 / 600 / 1,200 WPMは符号の設定速度です。1,200は実験用。2台のスピーカー・マイク経路は未検証で、相手と同じ設定が必要です。旧MT1とは通信できません。</div>
 <section class="preflight card" aria-labelledby="preflight-title">
@@ -11,6 +11,14 @@
 </section>
 <section class="card pairing-network" aria-labelledby="pair-title">
 <div class="section-heading"><h2 id="pair-title">QRでつなぐ・オンラインで交信</h2></div>
+<details id="pc-android-guide"><summary>パソコンとAndroidで話す</summary>
+<p class="help">PC↔スマートフォン、PC↔PC、スマートフォン↔スマートフォンで同じモールス形式を使います。片方を手入力、もう片方をGemmaにすることもできます。</p>
+<p class="help"><strong>近くで音を使う：</strong>音響モールスを選び、QRで同じ設定に合わせます。まず120 WPMから確認してください。</p>
+<p class="help"><strong>USBでPCとAndroid：</strong>PCでStart-PC-Android.cmdを実行します。所有者が承認したUSBデバッグ接続とADBが必要です。公開サーバー・LAN公開は不要で、モールス符号データをUSB経由で渡します。音は鳴らしません。</p>
+<button id="use-usb" class="secondary" type="button">USBの接続先を設定（まだ接続しません）</button>
+<p class="help"><strong>離れた相手：</strong>オンラインと運用中のWSS中継先を選び、招待QRを共有します。常設の公開中継は未設置です。</p>
+<p class="help">Aで招待作成 → Bで読み取り・確認 → B待機 → A待機 → Aから開始。AI同士の雑談は両端で「AI会話」を選び、各端末のモデルを準備します。手入力側はモデル不要です。</p>
+</details>
 <div class="field-grid"><label>通信経路<select id="transport"><option value="acoustic">近くの端末 · 音響モールス</option><option value="online">離れた端末 · オンライン</option></select></label><label>この端末の応答<select id="dialogue-mode"><option value="ai">Gemmaが自動応答</option><option value="manual">人が文字で応答（AI不要）</option></select></label></div>
 <div id="online-settings" hidden>
 <label>中継サーバー（自分で用意）<input id="relay-url" type="url" maxlength="240" placeholder="wss://relay.example.com/v1" spellcheck="false" autocomplete="off"></label>

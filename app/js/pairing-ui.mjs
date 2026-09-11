@@ -86,6 +86,13 @@ export function createPairingUI({options,changed,error,scanBusy}) {
   const scanner=new QRScanner({video:$('qr-video'),onResult:t=>{try{stage(t);}catch(e){error(e);}},onError:error,onBusy:value=>{$('qr-camera').hidden=!value;$('qr-camera-stop').disabled=!value;scanBusy(value);}});
   function action(id,fn){$(id).addEventListener('click',async()=>{try{if(locked)throw Error('先にすべて停止してください。');await fn();}catch(e){error(e);}});}
   $('transport').addEventListener('change',mode);
+  action('use-usb',()=>{
+    // Explicit setup only; never start ADB, networking, inference or recording.
+    invite=null;candidate=null;shown='';
+    $('invite-text').value='';$('qr-input').value='';$('qr-output').hidden=true;$('qr-apply').disabled=true;
+    $('transport').value='online';$('relay-url').value='ws://127.0.0.1:8787/v1';$('network-consent').checked=false;
+    mode();$('online-note').textContent='USB接続先だけを設定しました。PCでStart-PC-Android.cmdを実行し、Aで招待QRを作成→Bで確認して適用→両端でネット交信を許可してください。AIやマイクは開始していません。';
+  });
   action('show-acoustic-qr',()=>show(connectionCode(options())));
   action('make-online',()=>{
     const opts=options(),value=newInvite($('relay-url').value,{...opts,session:newSessionId()});
@@ -115,7 +122,7 @@ export function createPairingUI({options,changed,error,scanBusy}) {
     else {const a=document.createElement('a');a.href=url;a.download='MorseTalk-pairing.png';a.click();}
   });
   return {
-    lock(value){locked=value;for(const id of ['transport','dialogue-mode','relay-url','make-online','copy-invite','network-consent','show-acoustic-qr','scan-qr','qr-image','qr-stage','qr-input','qr-save'])$(id).disabled=value;$('qr-apply').disabled=value||!candidate;},
+    lock(value){locked=value;for(const id of ['use-usb','transport','dialogue-mode','relay-url','make-online','copy-invite','network-consent','show-acoustic-qr','scan-qr','qr-image','qr-stage','qr-input','qr-save'])$(id).disabled=value;$('qr-apply').disabled=value||!candidate;},
     get(){if($('transport').value!=='online')return null;if(!$('network-consent').checked)throw Error('オンラインの接続先と招待共有を確認して許可してください。');
       if(!invite)throw Error('先にオンライン招待を作るか、相手の招待を適用してください。');
       validateInvite(invite);if(connectionCode(options())!==invite.p||$('relay-url').value!==invite.r)throw Error('招待と現在の設定が違います。新しい招待を作成してください。');return invite;},

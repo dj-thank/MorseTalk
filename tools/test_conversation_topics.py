@@ -18,6 +18,25 @@ def main():
         with served_browser() as (server,browser):
             page=browser.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
             page.goto(server.origin+'/ai.html')
+            # Seeded rejection inputs from a previous failed run, not model output
+            # generated in this run. Only the corrective inference is real here.
+            correction=page.evaluate("""async model=>{
+              const {conversationMessages,replyIssue}=await import('/core/conversation.mjs');
+              const {generateReply}=await import('/js/ai-client.mjs');
+              const history=[{role:'user',content:'夜の本屋って、どんな雰囲気なの？'}];
+              const samples=['조용하고 은은한 조명이 독서에 집중하게 해. 어떤 종류의 책들이 주로 있나요?',
+                             '静かで落ち着いた雰囲気야. 어떤 종류의 책들이 주로 있나요?'];
+              const results=[];
+              for(const candidate of samples){
+                const started=performance.now();
+                const text=await generateReply(conversationMessages('CONVERSATION',history,{issue:'language',text:candidate,maxReplyBytes:180}),{consent:true,model});
+                results.push({candidate,text,issue:replyIssue(text,history,180),inferenceMs:performance.now()-started});
+              }
+              return {model,realInference:true,seededRejectedCandidates:true,transport:false,results};
+            }""",model)
+            (OUT/'language-repair-gemma.json').write_text(json.dumps(correction,ensure_ascii=False,indent=2))
+            print(json.dumps(correction,ensure_ascii=False),flush=True)
+            assert all(item['issue'] is None for item in correction['results']), correction
             page.evaluate('() => {window.topicProof = '+(ROOT/'tools/conversation_topics.mjs').read_text()+';}')
             cases=[{'topic':x,'style':'natural'} for x in ['daily','music','food','travel','science','technology','learning','games','creative','philosophy']]
             cases += [{'topic':'technology','style':x} for x in ['brainstorm','discuss','interview']]
