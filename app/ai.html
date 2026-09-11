@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="morsetalk-token" content="__MORSETALK_TOKEN__"><title>MorseTalk · AI Link</title><link rel="icon" href="icon.svg"><link rel="stylesheet" href="ai.css"></head>
 <body><main>
-<header><a href="index.html" class="brand">MorseTalk <span>0.4.0</span></a><span class="badge">AI LINK · 実験版</span></header>
-<section class="hero"><p class="eyebrow">AI ↔ MORSE ↔ MORSE ↔ AI</p><h1>Gemmaと、近くでも遠くでも。</h1><p>AIの文章を直接符号化。日本語もそのまま復元し、相手のAIへ。音響パケットに人間向けの読み上げ・音声認識は使いません。</p><div class="signal" aria-hidden="true"><i></i><i></i><i class="dash"></i><i></i><i class="dash"></i><i class="dash"></i><i></i><i></i><i class="dash"></i><i></i><i class="dash"></i><i></i></div></section>
+<header><a href="index.html" class="brand">MorseTalk <span>0.5.0</span></a><span class="badge">AI LINK · 実験版</span></header>
+<section class="hero"><p class="eyebrow">AI ↔ MORSE ↔ MORSE ↔ AI</p><h1>Gemma同士で、いろいろ話そう。</h1><p>AIの文章を直接符号化。日本語もそのまま復元し、相手のAIへ。音響パケットに人間向けの読み上げ・音声認識は使いません。</p><div class="signal" aria-hidden="true"><i></i><i></i><i class="dash"></i><i></i><i class="dash"></i><i class="dash"></i><i></i><i></i><i class="dash"></i><i></i><i class="dash"></i><i></i></div></section>
 <div class="notice"><strong>速度の数字は、実機の保証値ではありません。</strong> 120 / 300 / 600 / 1,200 WPMは符号の設定速度です。1,200は実験用。2台のスピーカー・マイク経路は未検証で、相手と同じ設定が必要です。旧MT1とは通信できません。</div>
 <section class="preflight card" aria-labelledby="preflight-title">
 <div class="section-heading"><h2 id="preflight-title">準備を確認</h2><span class="badge" id="execution-place">AIの設定を確認中</span></div>
@@ -45,12 +45,12 @@
 <p class="help" id="ai-help">Windowsはサーバー設定を使用します。モデルは同梱せず、自動購入・自動ダウンロードもしません。</p>
 <label class="check"><input id="consent" type="checkbox"><span>指定したAIに、受信文と会話履歴を渡すことを許可する。HTTPSの外部AIを指定した場合は端末外へ送られます。</span></label>
 <button id="test-ai" class="secondary">AI接続テスト（音は出ません）</button>
-<details><summary>会話の制限・音量</summary><label>会話全体の最大ターン<input id="turns" type="number" value="8" min="2" max="32"></label><label>AI応答上限（UTF-8バイト）<input id="max-bytes" type="number" value="180" min="32" max="512"></label><label>送信音量<input id="volume" type="range" min="0.03" max="0.35" step="0.01" value="0.18"></label><p class="help">上限超過の文章は勝手に切らず停止します。最大1回再送。無制限のAI会話・外部コマンド実行はありません。</p></details>
+<details><summary>会話の制限・音量</summary><label>会話全体の最大ターン<input id="turns" type="number" value="8" min="2" max="32"></label><label>AI応答上限（UTF-8バイト）<input id="max-bytes" type="number" value="180" min="32" max="512"></label><label>送信音量<input id="volume" type="range" min="0.03" max="0.35" step="0.01" value="0.18"></label><p class="help">反復・空文・上限超過は一度だけ再生成し、それでも解消しなければ停止します。本文は勝手に切りません。最大1回再送。無制限のAI会話・外部コマンド実行はありません。</p></details>
 </section>
 <div class="right-column"><section class="card conversation" id="conversation-panel"><div class="section-heading"><span class="step">03</span><h2>会話を開始</h2></div>
-<label>話題のひな型<select id="preset"><option value="custom">自分で入力</option><option value="work">作業の相談</option><option value="ideas">アイデア出し</option><option value="check">短い応答で接続確認</option></select></label>
-<label>AI同士で話す目的<textarea id="goal" rows="2" maxlength="600">一文ずつ短く、明日の作業計画を相談する。</textarea></label>
-<label>最初の話題<textarea id="topic" rows="2" maxlength="1000">明日は何から作業を始める？短い一文で提案して。</textarea></label>
+<label>話題を選ぶ（自由入力もできます）<select id="preset"><option value="custom">自分で入力</option><option value="work">作業の相談</option><option value="ideas">アイデア出し</option><option value="check">短い応答で接続確認</option></select></label>
+<label>AI同士で話す目的<textarea id="goal" rows="2" maxlength="600">相手の発言を受け止め、質問・理由・具体例で自然に話を広げる。</textarea></label>
+<label>最初の話題<textarea id="topic" rows="2" maxlength="1000">休日の朝を楽しく過ごすなら、どんな工夫をしてみたい？</textarea></label>
 <div id="manual-compose" hidden><label>相手へ送る文章<textarea id="manual-message" maxlength="512" rows="2"></textarea></label><button id="manual-send" disabled>モールスで送信</button><p class="help">Aから始めて交互に送ります。オンラインではGemmaなしでも通信を試せます。</p></div>
 <div class="buttons"><button id="listen">受信待機を開始</button><button id="start" disabled>Aから会話を開始</button><button id="stop" class="stop" disabled>すべて停止</button></div>
 <div class="status" id="status" role="status" aria-live="polite">停止中。先にBを受信待機にし、続いてAを開始してください。</div>

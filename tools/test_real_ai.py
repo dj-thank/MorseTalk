@@ -14,3 +14,8 @@ if __name__=='__main__':
     assert any(m.get('name')==model and m.get('digest') for m in inventory['models']), 'Model absent; no stub/fallback allowed'
     (OUT/'model-inventory.json').write_text(json.dumps(inventory,indent=2))
     run_pair(real_ai=True,model=model)
+
+# Run the production agent/model adapter on diverse topics separately from real-time audio.
+if __name__ == '__main__':
+    from test_conversation_topics import main as test_topics
+    test_topics()

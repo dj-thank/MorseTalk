@@ -47,7 +47,7 @@ with sync_playwright() as p:
       window.aiCalls=[];window.savedFiles=[];window.slow=false;window.pendingAI=null;window.modelState={installed:false,loaded:false,busy:false,phase:'idle',description:'TEST DOUBLE · 未読込'};
       const reply=(id,ok,result,error)=>window.dispatchEvent(new CustomEvent('morsetalk-native-result',{detail:{id,ok,result,error}}));
       window.NativeBridge={request(raw){const d=JSON.parse(raw);
-        if(d.method==='aiChat'){aiCalls.push(d.params);if(window.slow){window.pendingAI=d.id;return;}setTimeout(()=>reply(d.id,true,{text:'TEST DOUBLE 応答。'}),1);}
+        if(d.method==='aiChat'){aiCalls.push(d.params);if(window.slow){window.pendingAI=d.id;return;}setTimeout(()=>reply(d.id,true,{text:'TEST DOUBLE 応答。'+aiCalls.length}),1);}
         else if(d.method==='aiCapabilities')reply(d.id,true,{native:true,provider:'ollama',endpoint:'http://127.0.0.1:11434/api/chat',model:'gemma4:e2b-it-qat'});
         else if(d.method==='localModelStatus')reply(d.id,true,{...window.modelState});
         else if(d.method==='saveFile'){savedFiles.push(d.params);reply(d.id,true,{});}
@@ -98,3 +98,8 @@ with sync_playwright() as p:
     browser.close()
 (OUT/'v02-ui-results.json').write_text(json.dumps({'passed':len(checks),'checks':checks,'real_llm_tested':False,'physical_audio_tested':False},ensure_ascii=False,indent=2))
 print(f'{len(checks)} checks passed. Native AI is a test double, physical acoustic link untested.')
+
+# Additional conversation-specific UI cases, with independently labelled test doubles.
+if __name__ == '__main__':
+    import subprocess, sys
+    subprocess.run([sys.executable, str(ROOT/'tools/test_conversation_ui.py')], check=True)
