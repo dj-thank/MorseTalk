@@ -1,0 +1,2 @@
+# Optional only. No packages needed for the static app or Node tests.
+vosk==0.3.45

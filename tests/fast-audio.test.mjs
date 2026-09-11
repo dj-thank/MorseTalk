@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {FastAudio} from '../app/js/fast-audio.mjs';
+import {packFastFrame} from '../app/core/fast-codec.mjs';
+const bytes=packFastFrame({session:10,sender:0,seq:1,text:'はい'});
+function install(){
+ const names=['AudioContext','AudioWorkletNode','navigator'],old=Object.fromEntries(names.map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
+ const env={events:[],contexts:[],micCalls:0};
+ env.track={stop(){env.events.push('track-stop');},onended:null};env.stream={getTracks:()=>[env.track]};
+ const connectable=()=>({connect(){},disconnect(){env.events.push('disconnect');}});
+ class Context{constructor(){this.sampleRate=48000;this.currentTime=0;this.state='running';this.destination={};this.audioWorklet={addModule:async()=>{}};env.contexts.push(this);}async resume(){}createMediaStreamSource(){return connectable();}createGain(){return{...connectable(),gain:{value:1}};}createBuffer(){return{copyToChannel(){}};}createBufferSource(){const s={...connectable(),start(){env.events.push('tx-start');if(env.autoEnd!==false)setTimeout(()=>s.onended?.(),1);},stop(){env.events.push('tx-stop');s.onended?.();}};return s;}async close(){this.state='closed';env.events.push('context-close');}}
+ class Node{constructor(){Object.assign(this,connectable());this.port={postMessage:m=>env.events.push(m.kind==='mute'?`mute-${m.value}`:m.kind),onmessage:null};}}
+ Object.defineProperty(globalThis,'navigator',{value:{mediaDevices:{getUserMedia:async()=>{env.micCalls++;return env.pendingMic?await env.pendingMic:env.stream;}}},configurable:true});
+ Object.defineProperty(globalThis,'AudioContext',{value:Context,configurable:true});Object.defineProperty(globalThis,'AudioWorkletNode',{value:Node,configurable:true});
+ env.restore=()=>{for(const k of names){if(old[k])Object.defineProperty(globalThis,k,old[k]);else delete globalThis[k];}};return env;
+}
+test('Audio transport reuses microphone across two transmissions, mutes own receive',async()=>{const e=install(),a=new FastAudio({wpm:1200});try{await a.start(()=>{});await a.transmit(bytes);await a.transmit(bytes);assert.equal(e.micCalls,1);assert.deepEqual(e.events.filter(x=>x.startsWith('mute-')),['mute-true','mute-false','mute-true','mute-false']);a.stop();assert.ok(e.events.includes('track-stop'));assert.ok(e.events.includes('context-close'));}finally{a.stop();e.restore();}});
+test('Audio stop while TX pending rejects send and stops source',async()=>{const e=install(),a=new FastAudio({wpm:1200});try{e.autoEnd=false;await a.start(()=>{});const p=a.transmit(bytes);const rejected=assert.rejects(p,/停止/);a.stop();await rejected;assert.ok(e.events.includes('tx-stop'));assert.ok(!e.events.includes('mute-false'));}finally{a.stop();e.restore();}});
+test('Audio stop while microphone permission is pending stops late acquired track',async()=>{const e=install(),a=new FastAudio();let giveMic;try{e.pendingMic=new Promise(r=>{giveMic=r;});const p=a.start(()=>{});const rejected=assert.rejects(p,/キャンセル/);while(!e.micCalls)await new Promise(r=>setTimeout(r,0));a.stop();giveMic(e.stream);await rejected;assert.ok(e.events.includes('track-stop'));assert.equal(a.node,undefined);}finally{a.stop();e.restore();}});
+test('Audio refuses overlapped transmission instead of mixing data',async()=>{const e=install(),a=new FastAudio({wpm:1200});try{e.autoEnd=false;await a.start(()=>{});const p=a.transmit(bytes);const rejected=assert.rejects(p,/停止/);await assert.rejects(a.transmit(bytes),/重複/);a.stop();await rejected;}finally{a.stop();e.restore();}});

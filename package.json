@@ -1,0 +1,18 @@
+{
+  "name": "morsetalk",
+  "version": "0.2.1",
+  "private": true,
+  "description": "Offline-first voice \u2194 acoustic Morse translator for Windows and Android",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "build": "node scripts/build.mjs",
+    "test:ui": "python tools/test_ui.py",
+    "serve": "python server.py",
+    "serve:ai": "python server.py --ai"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,145 @@
+import { packFastFrame, unpackFastFrame, fastPcm, fastDuration, FastMorseDecoder } from '../core/fast-codec.mjs';
+import { prepareMessage } from '../core/packet.mjs';
+import { pcmToWav } from '../core/morse.mjs';
+import { ReliableMorseLink, MorseAgent } from '../core/fast-link.mjs';
+import { FastAudio } from './fast-audio.mjs';
+import { aiCapabilities, generateReply } from './ai-client.mjs';
+import { hasNative, nativeCall, setAwake } from './voice.mjs';
+const $=id=>document.getElementById(id);
+let audio=null,agent=null,link=null,virtualAgents=[],busy=false,generation=0,testAbort=null;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function status(text){$('status').textContent=text;}
+function entry(label,text,kind='event'){
+  $('transcript').querySelector('.empty')?.remove();
+  const box=document.createElement('div');box.className=`entry ${kind}`;
+  const name=document.createElement('small');name.textContent=label;box.append(name,document.createTextNode(text));$('transcript').append(box);
+  while($('transcript').children.length>200)$('transcript').firstElementChild.remove();
+  $('transcript').scrollTop=$('transcript').scrollHeight;
+}
+function options(){
+  const room=$('room').value,sessionText=$('session').value;
+  if(!/^[0-9a-fA-F]{8}$/.test(sessionText))throw new Error('セッションは8桁の16進数です。');
+  const session=parseInt(sessionText,16),sender=Number($('role').value),wpm=Number($('speed').value),volume=Number($('volume').value),maxTurns=Number($('turns').value),maxReplyBytes=Number($('max-bytes').value);
+  packFastFrame({room,session,sender,seq:1,text:'test'});
+  if(!Number.isInteger(maxTurns)||maxTurns<2||maxTurns>32||!Number.isInteger(maxReplyBytes)||maxReplyBytes<32||maxReplyBytes>512)throw new Error('会話制限の数値を確認してください。');
+  return {room,session,sender,wpm,volume,maxTurns,maxReplyBytes,frequency:4000,goal:$('goal').value};
+}
+function aiOptions(){
+  if(!$('consent').checked)throw new Error('会話文をAIに渡すことを許可してください。');
+  const model=$('model').value.trim();if(!model)throw new Error('導入済みモデル名を入力してください。');
+  return {model,endpoint:$('endpoint').value,provider:$('provider').value,consent:true};
+}
+function controls(){
+  const running=Boolean(audio||virtualAgents.length||busy);
+  $('listen').disabled=running;$('start').disabled=!agent||!agent.active||agent.history.length>0||Number($('role').value)!==0;
+  $('stop').disabled=!running;$('self-test').disabled=running;$('ai-pair').disabled=running;$('test-ai').disabled=running;$('export-fast').disabled=running;
+  for(const id of ['role','speed','room','session','model','goal','topic','turns','max-bytes','volume','consent'])$(id).disabled=running;
+  if(hasNative()){ $('endpoint').disabled=running;$('provider').disabled=running; }
+}
+function stop(message='停止しました。'){
+  ++generation;agent?.stop();agent=null;link?.close();link=null;
+  virtualAgents.forEach(a=>a.stop());virtualAgents=[];audio?.stop();audio=null;testAbort?.abort();testAbort=null;busy=false;setAwake(false);$('level').value=0;status(message);controls();
+}
+function onLinkEvent(e){
+  if(e.kind==='transmit'){entry('モールス送信',`ターン ${e.seq} · ${e.bytes} bytes${e.attempt?' · 再送':''}`);status('モールス送信 → 相手の受信確認待ち');}
+  if(e.kind==='delivered')entry('受信確認',`ターン ${e.seq} が相手に到達しました。`);
+  if(e.kind==='duplicate')entry('重複抑制',`ターン ${e.seq} は受信済み。AIには二重に渡しません。`);
+  if(e.kind==='timeout')entry('受信確認待ち',e.attempt?'再送でも応答がありません。':'再送を試みます。');
+  if(e.kind==='error'||e.kind==='invalid')entry('通信診断',e.message);
+}
+function agentEvents(label,opts){return e=>{
+  if(e.kind==='thinking')status(`${label} が応答を生成中…`);
+  if(e.kind==='generated'){
+    entry(`${label} · ターン ${e.seq}`,e.text,'local');$('inference').textContent=`${(e.inferenceMs/1000).toFixed(2)} s`;
+    const b=packFastFrame({...opts,sender:label.endsWith('B')?1:0,seq:e.seq,text:e.text});$('airtime').textContent=`${fastDuration(b,opts).toFixed(3)} s`;
+  }
+  if(e.kind==='peer')entry(`相手 · ターン ${e.seq}`,e.text,'peer');
+  if(e.kind==='complete'){status('ターン上限に到達。AIの自動応答は終了しました。受信は「すべて停止」で終了します。');controls();}
+  if(e.kind==='error'){entry('停止理由',e.message);stop(e.message);}
+};}
+async function beginListening(){
+  const opts=options(),cfg=aiOptions();busy=true;const epoch=++generation;controls();
+  const engine=new FastAudio(opts);audio=engine;
+  try{
+    const actual=await engine.start(e=>{
+      if(epoch!==generation)return;
+      if(e.kind==='frame')link?.receive(e.frame);
+      if(e.kind==='level')$('level').value=e.level;
+      if(e.kind==='error')entry('受信診断',e.message);
+      if(e.kind==='fatal'){entry('停止理由',e.message);stop(e.message);}
+    });
+    if(epoch!==generation){engine.stop();return;}
+    const ack=packFastFrame({...opts,seq:1,type:'ack'});
+    link=new ReliableMorseLink({...opts,sendAudio:bytes=>engine.transmit(bytes),ackDelayMs:400,ackTimeoutMs:Math.ceil(fastDuration(ack,opts)*1000+1400),onEvent:onLinkEvent});
+    agent=new MorseAgent({...opts,link,generate:(messages,args)=>generateReply(messages,{...cfg,...args}),onEvent:agentEvents(`AI ${opts.sender?'B':'A'}`,opts)});
+    setAwake(true);entry('マイク受信',`${actual.sampleRate} Hz · ${opts.wpm} WPM · 4,000 Hz。端末外の音を受信します。`);
+    status(opts.sender?'B：受信待機中。Aから会話を開始してください。':'A：受信待機中。「Aから会話を開始」を押してください。');
+  }catch(e){if(epoch===generation)stop(e.message);}
+  finally{if(epoch===generation){busy=false;controls();}}
+}
+function pcmChannel(bytes,opts){
+  const frames=[],errors=[],d=new FastMorseDecoder({...opts,sampleRate:48000,onFrame:f=>frames.push(f),onError:e=>errors.push(e)}),a=fastPcm(bytes,{...opts,sampleRate:48000});
+  d.push(new Float32Array(1777));
+  for(let i=0;i<a.pcm.length;i+=128)d.push(a.pcm.subarray(i,i+128));
+  if(errors.length||frames.length!==1)throw new Error(`PCM復号に失敗：${errors.join(' / ')}`);
+  return {frame:frames[0],seconds:a.seconds};
+}
+async function selfTest(){
+  const opts=options(),text=$('sample-text').value,b=packFastFrame({...opts,seq:1,text});
+  const rows=[];for(const wpm of [120,300,600,1200]){
+    const {frame,seconds}=pcmChannel(b,{...opts,wpm});if(frame.text!==text)throw new Error('本文が一致しません。');rows.push(`${wpm} WPM: ${seconds.toFixed(3)}秒`);
+  }
+  let comparison='';try{const old=prepareMessage({text,room:opts.room,id:20260911,mode:'packet',wpm:40});comparison=` / 旧MT1・40 WPM: ${old.seconds.toFixed(3)}秒`;}catch{}
+  $('diagnostic').textContent=`4速度すべてPCM復元一致。${rows.join(' / ')}${comparison}。これは生成音の長さです。実機通信・AI推論・ACKの時間は含みません。`;
+  entry('通信自己診断 · AIなし',`「${text}」を4速度のPCMから復元。AIは呼び出していません。`);
+  status('通信自己診断に成功。実機の受信待機・AI推論は開始していません。');
+  $('airtime').textContent=`${fastDuration(b,opts).toFixed(3)} s`;
+}
+async function testAI(){
+  const cfg=aiOptions();busy=true;const epoch=++generation;testAbort=new AbortController();controls();status('指定AIへ接続中。音声は送信しません。');
+  try{
+    const text=await generateReply([{role:'system',content:'Return only the single word OK. No tools.'},{role:'user',content:'Connection test.'}],{...cfg,signal:testAbort.signal});
+    if(epoch===generation){entry('実AIの接続応答',text);status('AI APIから文章を受信しました。会話内容の品質や2台の音響経路は別途確認が必要です。');}
+  }catch(e){if(epoch===generation)status(e.message);}
+  finally{if(epoch===generation){busy=false;testAbort=null;controls();}}
+}
+async function aiPair(){
+  const opts=options(),cfg=aiOptions();busy=true;const epoch=++generation;controls();
+  let links;const virtualCfg={...opts,maxTurns:Math.min(opts.maxTurns,8)};
+  try{
+    entry('検証モード','実際のAI APIを2役で呼び出します。両者の文章は必ずPCMモールスへ変換して復号しますが、音は鳴らさず、実時間での再生もしません。');
+    links=[0,1].map(sender=>new ReliableMorseLink({...opts,sender,ackDelayMs:0,ackTimeoutMs:500,maxRetries:0,onEvent:onLinkEvent,sendAudio:async bytes=>{
+      const {frame,seconds}=pcmChannel(bytes,opts);
+      if(frame.type==='data')entry('PCM仮想経路',`生成音 ${seconds.toFixed(3)}秒分を数値処理で復号。実機の所要時間ではありません。`);
+      setTimeout(()=>{if(epoch===generation)links[1-sender].receive(frame);},0);
+    }}));
+    virtualAgents=links.map((l,i)=>new MorseAgent({...virtualCfg,link:l,generate:(messages,args)=>generateReply(messages,{...cfg,...args}),onEvent:agentEvents(`AI ${i?'B':'A'}`,{...opts,sender:i})}));
+    busy=false;controls();await virtualAgents[0].start($('topic').value);
+    while(epoch===generation&&virtualAgents.some(a=>a.active))await sleep(50);
+    if(epoch===generation){virtualAgents.forEach(a=>a.stop());virtualAgents=[];status('実AI×2のPCM仮想経路テストが終了しました。実機間通信ではありません。');controls();}
+  }catch(e){if(epoch===generation)stop(e.message);}
+}
+async function exportWav(){
+  const opts=options(),data=packFastFrame({...opts,seq:1,text:$('sample-text').value}),a=fastPcm(data,{...opts,sampleRate:48000}),bytes=pcmToWav(a.pcm,48000),filename=`MorseTalk-MT2-${opts.wpm}wpm.wav`;
+  if(hasNative()){
+    let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+    await nativeCall('saveFile',{filename,mime:'audio/wav',base64:btoa(binary)},180000);
+  }else{
+    const url=URL.createObjectURL(new Blob([bytes],{type:'audio/wav'})),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  $('diagnostic').textContent=`${filename} · ${a.seconds.toFixed(3)}秒。CRCを含む実モールス波形です。`;
+}
+function handle(id,fn){$(id).addEventListener('click',()=>{Promise.resolve().then(fn).catch(e=>{status(e.message);entry('操作エラー',e.message);});});}
+handle('listen',beginListening);handle('start',async()=>{if(agent){$('start').disabled=true;await agent.start($('topic').value);controls();}});handle('stop',()=>stop());handle('self-test',selfTest);handle('test-ai',testAI);handle('ai-pair',aiPair);handle('export-fast',exportWav);handle('clear',()=>{$('transcript').replaceChildren();});
+$('role').addEventListener('change',controls);
+$('provider').addEventListener('change',()=>{if(hasNative())$('endpoint').value=$('provider').value==='ollama'?'http://127.0.0.1:11434/api/chat':'http://127.0.0.1:8080/v1/chat/completions';});
+addEventListener('pagehide',()=>stop('画面を離れたため停止しました。'));
+addEventListener('morsetalk-native-pause',()=>stop('画面を離れたため停止しました。'));
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stop('画面が非表示になったため停止しました。');});
+aiCapabilities().then(c=>{
+  if(c.portable){$('ai-help').textContent=c.description;return;}
+  $('provider').value=c.provider;$('endpoint').value=c.endpoint;$('model').value=c.model||'';
+  if(c.native){$('endpoint').disabled=false;$('provider').disabled=false;$('ai-help').textContent='Android：端末内AIのループバック、または明示指定のHTTPSを使用します。USB接続のWindows AIには adb reverse が使えます。モデルは別途必要です。';}
+  else $('ai-help').textContent=c.remote?'外部HTTPSのAIが設定されています。会話文はこのAIへ送られます。':'同じPCのAIサーバーを使用する設定です。推論先もローカルか確認してください（Ollama: OLLAMA_NO_CLOUD=1）。URL変更はサーバー環境変数です。';
+}).catch(e=>{$('ai-help').textContent=`${e.message} 単独HTMLの通信自己診断は利用できます。`;});
+controls();

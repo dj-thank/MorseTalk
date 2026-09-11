@@ -1,0 +1,25 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'jp.morsetalk.app'
+    buildFeatures { buildConfig true }
+    compileSdk 35
+    defaultConfig {
+        applicationId 'jp.morsetalk.app'
+        minSdk 26
+        targetSdk 35
+        testInstrumentationRunner 'jp.morsetalk.app.SmokeInstrumentation'
+        versionCode 3
+        versionName '0.2.1'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    // These are the very same modules used on Windows and in the Node tests.
+    sourceSets { main { assets.srcDirs = [file('../../app')] } }
+    buildTypes {
+        release { minifyEnabled false }
+    }
+    lint { abortOnError true }
+}

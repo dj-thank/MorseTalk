@@ -1,0 +1,11 @@
+.git
+.bootstrap
+.tools
+.venv
+models
+node_modules
+android/.gradle
+android/**/build
+**/__pycache__
+test-results
+verification

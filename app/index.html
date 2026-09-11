@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111a27">
+  <meta name="morsetalk-token" content="__MORSETALK_TOKEN__">
+  <meta name="description" content="声とモールスをつなぐ、端末内で動く音響翻訳機。">
+  <title>MorseTalk · 声とモールスの翻訳機</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<p class="help"><a href="ai.html">AI同士の高速モールス会話 → MorseTalk AI Link</a></p>
+  <div class="shell">
+    <header class="header">
+      <a class="brand" href="#" aria-label="MorseTalk ホーム"><span class="brand-mark" aria-hidden="true">● ━ ●</span><span>MorseTalk<small>VOICE ↔ MORSE</small></span></a>
+      <div class="platform"><span class="local-dot"></span><span id="platform-label">端末内で変換</span><span class="version">0.1</span></div>
+    </header>
+    <main>
+      <section class="intro">
+        <div><p class="eyebrow">声を、点と線でつなぐ。</p><h1>話す。鳴らす。伝わる。</h1><p class="lede">スピーカーとマイクで、もう１台へ。<br class="mobile-only">声 ↔ 文字 ↔ モールス音の翻訳機。</p></div>
+        <div class="signal-art" aria-hidden="true"><span></span><span class="long"></span><span></span><i></i><span class="long"></span><span></span><span class="long"></span></div>
+      </section>
+      <nav class="tabs" aria-label="機能"><button class="tab active" data-tab="conversation" aria-selected="true">翻訳・会話</button><button class="tab" data-tab="manual" aria-selected="false">モールスを入力</button><button class="tab" data-tab="guide" aria-selected="false">使い方</button></nav>
+      <section class="settings-card" aria-label="通信設定">
+        <div class="settings-grid">
+          <label class="field mode-field">通信方式<select id="mode" data-setting><option value="packet">端末間 · 日本語をそのまま</option><option value="wabun">和文 · かなのモールス</option><option value="international">欧文 · ABCのモールス</option></select></label>
+          <label class="field">速度 <span class="muted">WPM</span><input id="wpm" data-setting type="number" min="8" max="60" step="1" value="40" inputmode="numeric"></label>
+          <label class="field">周波数 <span class="muted">Hz</span><select id="frequency" data-setting><option value="500">500</option><option value="600">600</option><option value="700" selected>700</option><option value="800">800</option><option value="1000">1000</option></select></label>
+          <label class="field" id="room-field">通信コード<input id="room" data-setting value="0000" pattern="[0-9]{4}" inputmode="numeric" maxlength="4" autocomplete="off" aria-describedby="room-help"></label>
+        </div>
+        <p class="setting-hint" id="room-help">２台で <strong>方式・速度・周波数・通信コード</strong> を合わせてください。通信コードは混信を避ける目印で、暗号ではありません。</p>
+        <details class="advanced"><summary>音声・受信・保存の設定</summary>
+          <div class="advanced-grid">
+            <label class="field">音声の言語<select id="language" data-setting><option value="ja-JP">日本語</option><option value="en-US">English</option></select></label>
+            <label class="field">モールス音量 <span id="volume-value">25%</span><input id="volume" data-setting type="range" min="0.05" max="0.6" step="0.05" value="0.25"></label>
+            <label class="field">受信感度<select id="threshold" data-setting><option value="0.006">高い · 小さな音</option><option value="0.012" selected>標準</option><option value="0.03">低い · 大きな音</option></select></label>
+          </div>
+          <div class="check-grid"><label><input id="auto-speak" type="checkbox" checked>受信した文を読み上げる</label><label><input id="ask-ack" type="checkbox" data-setting>受信確認を要求する（時間が増えます）</label><label><input id="reply-ack" type="checkbox" checked>受信確認の要求に自動応答する</label><label><input id="save-history" type="checkbox">会話をこの端末に保存する</label></div>
+          <p class="fine">音声認識・読み上げは端末のオフライン機能を使います。対応する言語データが必要です。外部の認識サービスへの自動切替はしません。</p>
+          <p class="fine" id="voice-capabilities">音声機能を確認しています…</p>
+        </details>
+      </section>
+      <div class="status-bar"><span class="status-light" id="status-light"></span><span id="status" role="status" aria-live="polite">待機中</span><button id="stop" class="stop-button" disabled>すべて停止</button></div>
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <section id="panel-conversation" class="panel">
+        <div class="workspace">
+          <section class="card compose-card">
+            <div class="card-heading"><div><p class="eyebrow">TRANSMIT</p><h2>あなたから送る</h2></div><span class="step-badge">01</span></div>
+            <label for="draft" class="sr-only">送信する文章</label><textarea id="draft" rows="4" maxlength="4096" placeholder="ここに入力するか、下の「声を文字に」で話してください。" spellcheck="false"></textarea>
+            <div class="input-meta"><span id="byte-count">0 / 240 バイト</span><span id="estimate">送信時間を表示します</span></div>
+            <div class="compose-actions"><button id="voice" class="button secondary"><span aria-hidden="true">◉</span> 声を文字に</button><button id="send" class="button primary" disabled><span aria-hidden="true">↗</span> モールスで送信</button></div>
+            <p class="fine">認識した文章を確認してから送信します。送信中は受信を止め、同じ音を拾うループを防ぎます。</p>
+            <div id="transmit-progress" hidden><progress id="progress" value="0" max="1" aria-label="送信の進み具合"></progress><span id="progress-label">送信中</span></div>
+            <details class="code-preview"><summary>送信するモールスを確認</summary><p id="normalized" class="fine"></p><pre id="preview-code" class="morse-code">· · ·</pre><div class="small-actions"><button id="export-wav" class="text-button">WAVで保存</button><button id="copy-code" class="text-button">符号をコピー</button></div></details>
+          </section>
+          <section class="card receive-card">
+            <div class="card-heading"><div><p class="eyebrow">RECEIVE</p><h2>相手の音を受け取る</h2></div><span class="step-badge">02</span></div>
+            <div class="receiver-stage"><div class="receiver-symbol" id="receiver-symbol" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div><p id="receiver-prompt">相手が送る前に、受信を開始。</p><p class="fine">まず静かな場所で、短い文から試してください。</p></div>
+            <button id="listen" class="button receiver-button">◎ マイクで受信を開始</button>
+            <div class="meter-row"><span>入力レベル</span><meter id="level" min="0" max="0.3" low="0.005" high="0.2" optimum="0.1" value="0" aria-label="マイク入力の強さ"></meter><span id="tone-state">待機</span></div>
+            <details class="live-data"><summary>受信中の符号</summary><pre id="live-code" class="morse-code">まだ受信していません</pre></details>
+            <label class="file-button">録音済みのモールス音を読み込む<input type="file" id="import-audio" accept="audio/wav,audio/x-wav,.wav" class="sr-only"></label>
+          </section>
+        </div>
+        <section class="card history-card"><div class="history-heading"><div><p class="eyebrow">CONVERSATION</p><h2>会話</h2></div><div class="small-actions"><button id="export-history" class="text-button">書き出す</button><button id="clear-history" class="text-button">消去</button></div></div><div id="history" class="history" aria-live="polite"><div class="empty-state"><span aria-hidden="true">· ─ ·</span><p>ここに、あなたと相手の言葉が並びます。</p><small>通常はこの画面を閉じると消えます。保存は設定で選べます。</small></div></div></section>
+      </section>
+      <section id="panel-manual" class="panel" hidden>
+        <div class="workspace"><section class="card"><div class="card-heading"><div><p class="eyebrow">HUMAN ↔ MORSE</p><h2>点と線で話す</h2></div></div><label class="field">手入力の方式<select id="manual-mode"><option value="international">欧文 · ABC</option><option value="wabun">和文 · かな</option></select></label><label for="manual-code" class="field spaced">モールス符号</label><textarea id="manual-code" rows="3" class="morse-textarea" placeholder="... --- ..." spellcheck="false" maxlength="4096"></textarea><div class="key-buttons"><button id="dot" class="key-button" aria-label="短点">·<small>短点</small></button><button id="dash" class="key-button" aria-label="長点">─<small>長点</small></button><button id="letter-gap" class="key-button">␣<small>文字区切り</small></button><button id="word-gap" class="key-button">/<small>単語区切り</small></button></div><button id="hold-key" class="hold-key">押して打つ · 短く押すと点、長く押すと線</button><p class="fine">押す間隔から文字・単語の区切りも判定します。途中で指を離す・画面を切り替えると必ず音を止めます。</p><div class="small-actions"><button id="manual-backspace" class="text-button">１つ戻す</button><button id="manual-clear" class="text-button">消去</button></div></section><section class="card"><p class="eyebrow">DECODE</p><h2>言葉に戻す</h2><div id="manual-text" class="decoded-text" aria-live="polite">…</div><div class="compose-actions"><button id="manual-speak" class="button primary">声で読み上げ</button><button id="manual-send" class="button secondary">モールス音を鳴らす</button></div><p class="fine">欧文は英字・数字・一部の記号、和文はかなに対応。和文の小さい「ッ」「ャ」などは大きいかなで伝えます。知らない符号を勝手な文字に置き換えません。</p></section></div>
+      </section>
+      <section id="panel-guide" class="panel" hidden>
+        <div class="card guide"><p class="eyebrow">GET STARTED</p><h2>２台で会話するには</h2><ol><li><strong>２台で同じ設定にする。</strong><p>最初は「端末間」、40 WPM、700 Hz、通信コード0000。近くに複数組がいる場合は別の4桁にそろえます。</p></li><li><strong>受け取る側で、マイク受信を開始。</strong><p>マイクへのアクセスを許可します。最初は静かな場所で２台を近くに置き、適度な音量にしてください。大音量にするより、近づけてください。</p></li><li><strong>話して確認し、モールスで送信。</strong><p>「声を文字に」で入力、内容を修正してから送信。音が鳴り終わるまで待ちます。最初のテストは「はい」など短く。</p></li><li><strong>受信側の画面で確認し、交代。</strong><p>端末間モードではチェックサムが一致した文だけ表示・読み上げします。「受信確認を要求」を有効にすると応答を待ち、届かなければ最大１回再送します。同時には送信しないでください。</p></li></ol><div class="guide-note"><h3>知っておいてほしいこと</h3><p>これは音声そのものを保存・再現する仕組みではありません。言葉を文字にし、点と線で伝え、端末の合成音声で読み直します。元の声・抑揚は引き継ぎません。</p><p>日本語をそのまま送る「端末間」は、UTF-8を国際モールスに載せるMorseTalk独自形式です。一般の和文モールスとは別のものです。文字数に比べて送信時間が長くなります。</p><p>暗号化はありません。周囲の人・端末に聞き取られる可能性があります。救難・緊急通報や、確実な到達が必要な用途には使わないでください。マイク・音声認識は前面の画面で使います。</p></div><button id="self-test" class="button secondary">内部の変換・復号をテスト</button><p id="self-test-result" class="fine"></p><p class="fine">このテストは生成した音声データを内部で復号します。スピーカー・マイク・実際の距離や雑音は検査しません。</p></div>
+      </section>
+    </main>
+    <footer><span>MorseTalk · 声とモールスの翻訳機</span><span>音響通信 / 半二重 / 外部サーバー不要</span></footer>
+  </div>
+  <script type="module" src="js/app.mjs"></script>
+</body>
+</html>
