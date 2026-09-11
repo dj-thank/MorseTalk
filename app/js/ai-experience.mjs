@@ -7,6 +7,15 @@ export function createExperience({options, changed, error}) {
   const invoke=(id,fn)=>$(id).addEventListener('click',()=>{try{if(locked)throw new Error('実行中です。先にすべて停止してください。');fn();}catch(e){error(e);}});
   function updateReadiness(){
     const local=hasNative()&&$('provider').value==='litert';
+    if($('dialogue-mode')?.value==='manual'){
+      const online=$('transport')?.value==='online';
+      $('execution-place').textContent='手入力 · AIは呼び出しません';
+      $('preflight-model').textContent='モデル不要';
+      $('preflight-consent').textContent=online?($('network-consent').checked?'ネット交信を許可済み':'ネット交信の許可が必要'):'AI処理の許可は不要';
+      $('preflight-pair').textContent=`端末${$('role').value==='1'?'B':'A'} · ${online?'オンライン':$('speed').value+' WPM'} · ${$('turns').value}ターン`;
+      $('readiness').textContent=model?.busy?'モデル処理の終了を待ってから接続してください。':online?'招待を共有して両端でネット交信を許可。B待機 → A待機 → Aから手入力で送信します。':'両端の設定を合わせ、B待機 → A待機 → Aから手入力で送信します。';
+      return;
+    }
     $('execution-place').textContent=local?'端末内 Gemma 4 E2B':'設定したAIサーバー';
     $('preflight-model').textContent=local ? (!model?'状態確認中':model.busy?'モデル処理中':model.loaded?'読込済み':model.installed?'取り込み済み · 先読み可能':'モデルを取り込む') : 'AI接続テストで確認';
     $('preflight-consent').textContent=$('consent').checked?'AI処理を許可済み':'AI処理の許可が必要';
@@ -56,7 +65,7 @@ export function createExperience({options, changed, error}) {
       }
     }catch(e){error(e);}
   });
-  for(const id of ['role','speed','turns','consent','provider'])$(id).addEventListener('change',updateReadiness);
+  for(const id of ['role','speed','turns','consent','provider','dialogue-mode','transport','network-consent'])$(id).addEventListener('change',updateReadiness);
   updateReadiness();
   return {
     model(value){model=value;updateReadiness();const p=importProgress(value),bar=$('model-progress');

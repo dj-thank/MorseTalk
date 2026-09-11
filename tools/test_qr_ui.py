@@ -28,7 +28,7 @@ with sync_playwright() as p:
     assert decoded==invite;passed('Encrypted-online invitation survives actual QR generation and decoding')
     page.locator('#role').select_option('0');page.locator('#qr-input').fill(invite);page.locator('#qr-stage').click();expect(page.locator('#qr-preview')).to_contain_text('relay.example.com');expect(page.locator('#role')).to_have_value('0')
     page.locator('#qr-apply').click();expect(page.locator('#role')).to_have_value('1');expect(page.locator('#network-consent')).not_to_be_checked();expect(page.locator('#consent')).not_to_be_checked();passed('Online preview identifies relay; explicit apply selects B without granting either consent')
-    page.locator('#dialogue-mode').select_option('manual');page.locator('#listen').click();expect(page.locator('#status')).to_contain_text('許可');passed('Network connection cannot begin without explicit network consent')
+    page.locator('#dialogue-mode').select_option('manual');expect(page.locator('#preflight-model')).to_have_text('モデル不要');expect(page.locator('#execution-place')).to_contain_text('AIは呼び出しません');expect(page.locator('#preflight-consent')).to_have_text('ネット交信の許可が必要');page.locator('#listen').click();expect(page.locator('#status')).to_contain_text('許可');passed('Network connection cannot begin without explicit network consent')
     for width in [320,390,768,1280]:
         page.set_viewport_size({'width':width,'height':844});page.wait_for_timeout(80)
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),width
