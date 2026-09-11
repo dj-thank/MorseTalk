@@ -1,234 +1,38 @@
-name: MorseTalk build and real verification
+name: Prepare pinned offline QR libraries
 on:
   push:
-    paths-ignore: ['docs/**', '**.md']
-  pull_request:
-    paths-ignore: ['docs/**', '**.md']
-  workflow_dispatch:
-defaults:
-  run:
-    shell: bash
+    branches: ['feat/qr-online']
+    paths: ['.github/workflows/verification.yml']
 permissions:
   contents: read
-concurrency:
-  group: morsetalk-${{ github.ref }}
-  cancel-in-progress: true
 jobs:
-  core-browser:
+  vendor:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
       - uses: actions/setup-node@v4
         with: {node-version: '22'}
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - name: Execute complete core and server tests in Docker
+      - name: Obtain fixed QR encoder and decoder without install scripts
         run: |
-          mkdir -p test-results
-          git rev-parse HEAD > test-results/source-commit.txt
-          docker build -t morsetalk-test .
-          docker run --rm morsetalk-test 2>&1 | tee test-results/container-tests.log
-      - run: node scripts/build.mjs
-      - run: python -m pip install playwright==1.57.0
-      - run: python -m playwright install --with-deps chromium
-      - name: AI and legacy UI regression tests
-        run: |
-          python tools/test_ai_ui.py
-          python tools/test_ui_inmemory.py
-      - run: python tools/test_ui.py
-      - run: python tools/test_fast_browser.py
-      - name: Real-time audio control with explicitly identified AI test double
-        run: python tools/test_audio_pair.py
-      - run: node tools/benchmark_fast.mjs
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: core-and-browser-evidence
-          path: test-results/
-          retention-days: 14
-  windows:
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - name: Actual Windows PowerShell launcher and loopback-server smoke test
-        shell: powershell
-        run: |
-          New-Item -ItemType Directory -Force test-results | Out-Null
-          git rev-parse HEAD | Out-File test-results/source-commit.txt -Encoding ascii
-          ./windows/smoke-test.ps1 | Tee-Object -FilePath test-results/windows-smoke.txt
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: windows-evidence
-          path: test-results/
-          retention-days: 14
-  real-ai-audio:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    env: {MORSETALK_AI_MODEL: 'gemma4:e2b-it-qat'}
-    steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - uses: actions/setup-node@v4
-        with: {node-version: '22'}
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - name: Start actual Gemma 4 E2B in bounded Docker container
-        run: |
-          mkdir -p test-results
-          git rev-parse HEAD > test-results/source-commit.txt
-          bash tools/start_ci_model.sh
-      - run: python -m pip install playwright==1.57.0
-      - run: python -m playwright install --with-deps chromium
-      - name: Gemma A -> real-time PCM/AudioWorklet -> Gemma B, four turns
-        run: python tools/test_real_ai.py
-      - name: Preserve model logs and tested source
-        if: always()
-        run: |
-          mkdir -p test-results
-          docker logs morsetalk-ollama > test-results/ollama.log 2>&1 || true
-          git archive --format=zip -o test-results/source-tested.zip HEAD
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: real-ai-audio-evidence
-          path: test-results/
-          retention-days: 14
-      - if: always()
-        run: docker rm -f morsetalk-ollama || true
-  android-build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - uses: actions/setup-java@v5
-        with: {distribution: temurin, java-version: '17'}
-      - uses: android-actions/setup-android@v4
-      - uses: gradle/actions/setup-gradle@v4
-        with: {gradle-version: '8.11.1'}
-      - name: Build app and instrumentation once for both Android runtime jobs
-        run: |
-          mkdir -p test-results/android
-          git rev-parse HEAD > test-results/source-commit.txt
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-          cd android
-          gradle --no-daemon --console=plain assembleDebug assembleDebugAndroidTest lintDebug
-      - name: Verify and record the exact app and test APKs that will be installed
-        run: |
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee test-results/android/apk-signature.txt
-          sha256sum android/app/build/outputs/apk/debug/app-debug.apk > test-results/android/APK-SHA256.txt
-          sha256sum android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk > test-results/android/TEST-APK-SHA256.txt
+          set -euo pipefail
+          mkdir -p /tmp/qr-deps out/app/vendor out/app/licenses
+          cd /tmp/qr-deps
+          npm pack --ignore-scripts --json qrcode-generator@1.4.4 jsqr@1.4.0 > npm-packs.json
+          mkdir encoder decoder
+          tar -xzf qrcode-generator-1.4.4.tgz -C encoder
+          tar -xzf jsqr-1.4.0.tgz -C decoder
+          cp encoder/package/qrcode.js "$GITHUB_WORKSPACE/out/app/vendor/qrcode.js"
+          cp decoder/package/dist/jsQR.js "$GITHUB_WORKSPACE/out/app/vendor/jsQR.js"
+          cp encoder/package/LICENSE "$GITHUB_WORKSPACE/out/app/licenses/qrcode-generator.txt"
+          cp decoder/package/LICENSE "$GITHUB_WORKSPACE/out/app/licenses/jsQR.txt"
+          cp npm-packs.json "$GITHUB_WORKSPACE/out/npm-packs.json"
+          cd "$GITHUB_WORKSPACE/out"
+          sha256sum app/vendor/* app/licenses/* > QR-SHA256.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: MorseTalk-installable-debug-APK
-          path: |
-            android/app/build/outputs/apk/debug/app-debug.apk
-            android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            test-results/source-commit.txt
-            test-results/android/
+          name: pinned-offline-qr-libraries
+          path: out/
           if-no-files-found: error
-          retention-days: 14
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: android-build-and-lint-evidence
-          path: |
-            test-results/
-            android/app/build/reports/
-          retention-days: 14
-  android:
-    needs: android-build
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    env: {MORSETALK_AI_MODEL: 'gemma4:e2b-it-qat'}
-    steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - uses: actions/setup-java@v5
-        with: {distribution: temurin, java-version: '17'}
-      - uses: android-actions/setup-android@v4
-      - uses: actions/download-artifact@v4
-        with: {name: MorseTalk-installable-debug-APK, path: .}
-      - name: Verify the downloaded installable app, test APK and source identity
-        run: |
-          test "$(cat test-results/source-commit.txt)" = "$(git rev-parse HEAD)"
-          sha256sum -c test-results/android/APK-SHA256.txt
-          sha256sum -c test-results/android/TEST-APK-SHA256.txt
-      - run: bash tools/start_ci_model.sh
-      - name: Enable hosted-runner KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Install the published APK; HTTP Gemma, receiver and polished UI
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          cores: 2
-          ram-size: 3072M
-          disable-animations: true
-          script: bash tools/android_smoke.sh
-      - name: Collect logs and verification scope
-        if: always()
-        run: |
-          mkdir -p test-results
-          docker logs morsetalk-ollama > test-results/ollama.log 2>&1 || true
-          printf 'The published APK is installed after SHA256 verification. Android emulator, not physical phones. Native Gemma has a separate job.\n' > test-results/SCOPE.txt
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: android-runtime-evidence
-          path: test-results/
-          retention-days: 14
-      - if: always()
-        run: docker rm -f morsetalk-ollama || true
-  android-local-gemma:
-    needs: android-build
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - uses: actions/setup-java@v5
-        with: {distribution: temurin, java-version: '17'}
-      - uses: android-actions/setup-android@v4
-      - uses: actions/download-artifact@v4
-        with: {name: MorseTalk-installable-debug-APK, path: .}
-      - name: Verify this is the same APK as the distributed and HTTP-tested artifact
-        run: |
-          test "$(cat test-results/source-commit.txt)" = "$(git rev-parse HEAD)"
-          sha256sum -c test-results/android/APK-SHA256.txt
-          sha256sum -c test-results/android/TEST-APK-SHA256.txt
-      - name: Download exact E2B LiteRT artifact and verify immutable revision and LFS digest
-        run: python3 tools/download_gemma4.py
-      - name: Enable hosted-runner KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Published APK with actual on-device Gemma, KV reuse, PCM and cancellation
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          cores: 2
-          ram-size: 6144M
-          disk-size: 8192M
-          disable-animations: true
-          script: bash tools/android_local_gemma.sh
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: android-local-Gemma4-E2B-evidence
-          path: test-results/
-          retention-days: 14
+          retention-days: 7
