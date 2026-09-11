@@ -9,19 +9,19 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const assert=require('node:assert/strict');
-const {spawn}=require('node:child_process');
+const {spawn,spawnSync}=require('node:child_process');
 const {once}=require('node:events');
 const ROOT=path.resolve(__dirname,'..');
 const OUT=path.join(ROOT,'test-results','pc-android');fs.mkdirSync(OUT,{recursive:true});
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const MODEL=process.env.MORSETALK_AI_MODEL||'gemma4:e2b-it-qat';
-const RELAY=process.env.MORSETALK_TEST_RELAY||'ws://127.0.0.1:8787/v1';
+const RELAY=process.env.MORSETALK_TEST_RELAY||'ws://127.0.0.1:8788/v1';
 const localGemma=process.argv.includes('--local-gemma');
 const report={ok:false,desktopOS:process.platform,android:'installed debug APK in emulator',
-  physicalDevices:false,publicInternet:false,transport:'AES-GCM Morse symbols / loopback relay / ADB USB-equivalent reverse',
+  physicalDevices:false,publicInternet:false,transport:'AES-GCM Morse symbols / shipped localhost USB helper / actual ADB reverse to emulator',
   androidInference:localGemma?'native LiteRT Gemma 4 E2B':'Java -> actual Ollama Gemma 4 E2B',
   desktopInference:'Python -> actual Ollama Gemma 4 E2B',sameInferenceServer:!localGemma,cases:[]};
-let device,browser,server,desktop,phone,sourceOrigin;const errors=[];
+let device,browser,server,desktop,phone,sourceOrigin,beforeMappings;const errors=[];
 function record(){fs.writeFileSync(path.join(OUT,'result.json'),JSON.stringify(report,null,2));}
 async function waitFor(fn,description,timeout=30000){
   const deadline=Date.now()+timeout;while(Date.now()<deadline){if(await fn())return;await delay(100);}throw Error(`Timeout: ${description}`);
@@ -33,12 +33,23 @@ async function click(page,selector){
   // Native touch coordinates are tested separately by Android instrumentation.
   await locator.click();
 }
+function reverseMappings(){
+  const result=spawnSync('adb',['-s',device.serial(),'reverse','--list'],{encoding:'utf-8',timeout:15000});
+  assert.equal(result.status,0,'Cannot inspect the selected emulator reverse mappings');
+  return result.stdout.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).sort();
+}
 async function startDesktop(){
-  server=spawn(process.env.PYTHON||'python3',['server.py','--port','0','--no-browser','--ai'],{
+  const relay=new URL(RELAY),port=Number(relay.port);
+  assert.equal(relay.hostname,'127.0.0.1');assert.equal(relay.protocol,'ws:');
+  assert.ok(port>=1024&&port<=65535,'A dedicated unused USB test port is required');
+  beforeMappings=reverseMappings();
+  server=spawn(process.env.PYTHON||'python3',['-X','utf8','tools/pc_android.py','--serial',device.serial(),'--port',String(port),'--no-browser'],{
     cwd:ROOT,env:{...process.env,PYTHONUNBUFFERED:'1'},stdio:['ignore','pipe','pipe']});
   let output='',error='';server.stdout.on('data',data=>{output+=data;});server.stderr.on('data',data=>{error+=data;});
-  await waitFor(()=>{const m=output.match(/MorseTalk: (http:\/\/127\.0\.0\.1:\d+)/);if(m)sourceOrigin=m[1];
-    if(server.exitCode!==null)throw Error('Desktop launcher stopped: '+error.slice(0,200));return !!m;},'desktop local server');
+  await waitFor(()=>{const m=output.match(/PC画面: (http:\/\/127\.0\.0\.1:\d+)\/ai\.html/);if(m)sourceOrigin=m[1];
+    if(server.exitCode!==null)throw Error('USB desktop helper stopped: '+error.slice(0,200));return !!m;},'shipped USB helper');
+  assert.ok(reverseMappings().some(line=>line.endsWith(`tcp:${port} tcp:${port}`)),'Helper did not create its reverse mapping');
+  report.usbHelperCreatedMapping=true;
 }
 async function prepare(page,isAI){
   // Keep the application in the foreground; existing app lifecycle cleanup remains active.
@@ -137,6 +148,7 @@ async function aiCase(){
     await device.shell('am force-stop jp.morsetalk.app');
     await device.shell('am start -W -n jp.morsetalk.app/.MainActivity');
     const view=await device.webView({pkg:'jp.morsetalk.app'});phone=await view.page();
+    await waitFor(()=>phone.url().startsWith('https://appassets.androidplatform.net/'),'installed app URL');
     phone.on('pageerror',e=>errors.push({side:'android',error:String(e)}));
     assert.ok(phone.url().startsWith('https://appassets.androidplatform.net/'),'Must use installed bundled app, not a mobile viewport');
     await startDesktop();browser=await chromium.launch({headless:true,args:['--no-sandbox']});
@@ -154,8 +166,15 @@ async function aiCase(){
         await page.screenshot({path:path.join(OUT,side+'.png'),fullPage:true});}catch{}
     }
     if(browser)await browser.close().catch(()=>{});
-    if(device){await device.shell('am force-stop jp.morsetalk.app').catch(()=>{});await device.close().catch(()=>{});}
-    if(server){server.kill();await Promise.race([once(server,'exit').catch(()=>{}),delay(3000)]);if(server.exitCode===null)server.kill('SIGKILL');}
+    if(device)await device.shell('am force-stop jp.morsetalk.app').catch(()=>{});
+    if(server){
+      server.kill('SIGINT');await Promise.race([once(server,'exit').catch(()=>{}),delay(10000)]);
+      if(server.exitCode===null){server.kill('SIGKILL');report.ok=false;report.cleanupError='USB helper failed to exit gracefully';process.exitCode=1;}
+      try{report.usbHelperCleanedUp=JSON.stringify(reverseMappings())===JSON.stringify(beforeMappings);
+        if(!report.usbHelperCleanedUp){report.ok=false;process.exitCode=1;}}
+      catch(e){report.ok=false;report.cleanupError=String(e);process.exitCode=1;}
+    }
+    if(device)await device.close().catch(()=>{});
     record();console.log(JSON.stringify(report,null,2));
   }
 })();
