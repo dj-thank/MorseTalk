@@ -1,9 +1,11 @@
 import { connectionCode, parseConnectionCode, newSessionId, importProgress, SessionJournal } from '../core/session-tools.mjs';
 import { hasNative, nativeCall } from './voice.mjs';
-/** Presentation only. Main controller remains the sole owner of inference and audio. */
+import { mountAcademy } from './academy-app.mjs';
+/** AI Link presentation. Academy is isolated in the same trusted document. */
 export function createExperience({options, changed, error}) {
   const $=id=>document.getElementById(id), journal=new SessionJournal();
   let locked=false, model=null, phase='停止中', timer=null, timeBase=performance.now(), run=false;
+  const academy=mountAcademy({canOpen:()=>!locked&&!model?.busy&&model?.phase!=='importing'});
   const invoke=(id,fn)=>$(id).addEventListener('click',()=>{try{if(locked)throw new Error('実行中です。先にすべて停止してください。');fn();}catch(e){error(e);}});
   function updateReadiness(){
     const local=hasNative()&&$('provider').value==='litert';
@@ -75,7 +77,7 @@ export function createExperience({options, changed, error}) {
       $('model-progress-text').textContent=p.total?`${size(p.bytes)} / ${size(p.total)} · ${Math.floor(p.fraction*100)}%`:`${size(p.bytes)}をコピー済み（全体サイズ不明）`;
       $('model-space').textContent=Number.isFinite(value.freeBytes)?`空き容量 ${(value.freeBytes/1073741824).toFixed(1)} GiB · 元ファイルとアプリ用コピーの両方が必要です。`:'';
     },
-    lock(value){locked=value;for(const id of ['make-code','apply-code','copy-code','new-session','pairing-code','preset','export-log','include-transcript'])$(id).disabled=value;updateReadiness();},
+    lock(value){locked=value;academy.setLocked(value);for(const id of ['make-code','apply-code','copy-code','new-session','pairing-code','preset','export-log','include-transcript'])$(id).disabled=value;updateReadiness();},
     start(mode){journal.reset(mode);timeBase=performance.now();run=true;phase='準備中';clearInterval(timer);timer=setInterval(tick,500);$('elapsed').textContent='0 s';$('inference').textContent='—';$('airtime').textContent='—';tick();},
     stage(value){phase=value;$('phase-label').textContent=value;},
     record(e){journal.record(e);$('turn-count').textContent=`${journal.turns} / ${$('turns').value}`;$('retry-count').textContent=String(journal.retries);},
