@@ -61,5 +61,34 @@ with sync_playwright() as p:
     check('New topic and style controls fit compact mobile and desktop widths')
     page.set_viewport_size({'width':1000,'height':950});page.locator('#conversation-panel').screenshot(path=str(OUT/'conversation-panel.png'))
     assert not errors,errors;check('No page exceptions in the new conversation controls')
+    # Model-finished callback precedes the next UI status poll. This is a
+    # deliberate bridge/state double, NOT an Android or model-speed claim.
+    native=browser.new_page();native_errors=[];native.on('pageerror',lambda e:native_errors.append(str(e)))
+    native.evaluate("""()=>{
+      window.modelState={installed:true,loaded:true,busy:false,description:'TEST DOUBLE'};window.modelCalls=0;
+      const result=(id,r)=>dispatchEvent(new CustomEvent('morsetalk-native-result',{detail:{id,ok:true,result:r}}));
+      window.NativeBridge={request(raw){const d=JSON.parse(raw);
+        if(d.method==='aiCapabilities')result(d.id,{native:true,provider:'litert',model:'gemma-4-E2B-it.litertlm',endpoint:''});
+        else if(d.method==='localModelStatus')result(d.id,{...modelState});
+        else if(d.method==='aiChat'){modelCalls++;setTimeout(()=>result(d.id,{text:'明示的テスト応答'+modelCalls+'。'}),20);}
+        else result(d.id,{});
+      }};
+    }""")
+    native.set_content((ROOT/'dist/MorseTalk-AI-Portable.html').read_text())
+    expect(native.locator('#conversation-single')).to_be_enabled()
+    native.evaluate("modelState.busy=true;dispatchEvent(new Event('morsetalk-local-model'))")
+    expect(native.locator('#conversation-single')).to_be_disabled()
+    # Same native-completion/UI-poll ordering as the previously failing harness.
+    native.evaluate("modelState.busy=false;document.querySelector('#consent').checked=true;document.querySelector('#turns').value=4;document.querySelector('#speed').value=1200;document.querySelector('#ai-pair').click()")
+    assert native.evaluate('modelCalls')==0
+    expect(native.locator('#conversation-single')).to_be_enabled(timeout=5000)
+    assert native.evaluate('modelCalls')==0
+    check('Busy-state polling restores the real entry without starting a disabled click or queued inference')
+    native.locator('#conversation-single').click()
+    expect(native.locator('#status')).to_contain_text('PCM仮想経路テストが終了',timeout=15000)
+    assert native.evaluate('modelCalls')==3
+    expect(native.locator('#transcript')).to_contain_text('あなたの最初の話題 · ターン 1')
+    assert not native_errors,native_errors
+    check('After native UI readiness, a user click runs one shared topic and three labelled test-double replies')
     browser.close()
 (OUT/'conversation-ui.json').write_text(json.dumps({'checks':checks,'passed':len(checks),'realModel':False,'physicalTransport':False},ensure_ascii=False,indent=2))

@@ -79,6 +79,13 @@ public final class SmokeInstrumentation extends Instrumentation {
             report.put("status","passed");ok=true;
         } catch(Throwable e) {
             try {report.put("status","failed").put("error",e.toString());}catch(Exception ignored) { }
+            // Test-only controlled inputs; retain the actual failure UI, not just
+            // an early screenshot. Do not manufacture a model-success result.
+            try {report.put("failure_ui",js("JSON.stringify({status:document.querySelector('#status')?.textContent,local:document.querySelector('#local-model-status')?.textContent,disabled:document.querySelector('#conversation-single')?.disabled,transcript:document.querySelector('#transcript')?.textContent})"));}catch(Exception ignored) { }
+            try(OutputStream out=getTargetContext().openFileOutput("smoke-failure.png",Context.MODE_PRIVATE)) {
+                Bitmap shot=getUiAutomation().takeScreenshot();
+                if(shot!=null){shot.compress(Bitmap.CompressFormat.PNG,100,out);shot.recycle();}
+            }catch(Exception ignored) { }
             result.putString("error",e.toString());
         } finally {
             try {report.put("checks",checks);try(OutputStream out=getTargetContext().openFileOutput("smoke-result.json",Context.MODE_PRIVATE)){out.write(report.toString(2).getBytes(StandardCharsets.UTF_8));}}catch(Exception ignored) { }
@@ -186,8 +193,18 @@ public final class SmokeInstrumentation extends Instrumentation {
         require("window.nativeProof.ok", "Actual local Gemma failed: "+js("JSON.stringify(nativeProof)"));
         report.put("local_gemma",new JSONObject(new JSONArray("["+js("JSON.stringify(nativeProof)")+"]").getString(0)));
         check("Actual LiteRT-LM model load, two real replies and exact-prefix KV reuse",js("JSON.stringify(nativeProof)"));
-        js("document.querySelector('#consent').checked=true;document.querySelector('#turns').value=4;document.querySelector('#speed').value=1200;document.querySelector('#goal').value='防災用品を一つずつ、日本語15文字以内の短い一文で具体的に提案。';document.querySelector('#topic').value='何を準備する？';document.querySelector('#clear').click();document.querySelector('#ai-pair').click();true");
-        waitJs("document.querySelector('#status').textContent.includes('PCM仮想経路テストが終了')",420000);
+        // A direct native probe can finish before the UI's next status poll.
+        // Do not click a disabled button (HTMLElement.click then does nothing).
+        // Keep the production busy guard: wait for it and use the actual new entry.
+        waitJs("!document.querySelector('#conversation-single').disabled && !document.querySelector('#clear').disabled",15000);
+        tap("#clear");
+        waitJs("document.querySelector('#transcript').children.length===0",5000);
+        js("document.querySelector('#consent').checked=true;document.querySelector('#consent').dispatchEvent(new Event('change'));document.querySelector('#turns').value=4;document.querySelector('#speed').value=1200;document.querySelector('#goal').value='防災用品を一つずつ、日本語15文字以内の短い一文で具体的に提案。';document.querySelector('#topic').value='何を準備する？';true");
+        tap("#conversation-single");
+        waitJs("document.querySelector('#transcript').textContent.includes('あなたの最初の話題 · ターン 1')",8000);
+        check("Enabled conversation entry starts from a real touch after native busy-state settles",true);
+        waitJs("document.querySelector('#status').textContent.includes('PCM仮想経路テストが終了') || document.querySelector('#transcript').textContent.includes('停止理由')",420000);
+        require("document.querySelector('#status').textContent.includes('PCM仮想経路テストが終了')", "Native conversation stopped: "+js("document.querySelector('#transcript').textContent"));
         require("document.querySelector('#transcript').textContent.split('数値処理で復号').length-1===4", "Native 4-turn PCM exchange incomplete");
         require("document.querySelector('#transcript').textContent.includes('あなたの最初の話題 · ターン 1')", "Initial topic was not labelled as human input");
         check("One shared initial topic and three on-device Gemma replies through PCM (not real-time acoustics)",js("document.querySelector('#transcript').textContent"));
