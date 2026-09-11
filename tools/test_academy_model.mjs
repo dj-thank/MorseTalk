@@ -11,10 +11,11 @@ if(endpoint.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(endp
 const samples=[];
 async function generate(messages,{signal}){
   const start=performance.now();
-  const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.any([signal,AbortSignal.timeout(120000)]),body:JSON.stringify({model,messages,stream:false,options:{num_ctx:2048,num_predict:128,num_thread:2,temperature:0.1}})});
+  // Match the production AIService Ollama contract, including disabled thinking.
+  const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.any([signal,AbortSignal.timeout(120000)]),body:JSON.stringify({model,messages,stream:false,think:false,keep_alive:'10m',options:{num_ctx:4096,num_predict:96,temperature:0.3}})});
   if(!response.ok)throw new Error(`Model HTTP ${response.status}`);
   const result=await response.json();
-  samples.push({messages,reply:result.message?.content,inferenceMs:Math.round(performance.now()-start)});
+  samples.push({messages,reply:result.message?.content,inferenceMs:Math.round(performance.now()-start),doneReason:result.done_reason,generatedTokens:result.eval_count});
   if(typeof result.message?.content!=='string')throw new Error('Missing actual model reply');
   return result.message.content;
 }
