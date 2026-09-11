@@ -55,6 +55,7 @@ public final class SmokeInstrumentation extends Instrumentation {
                 shot.compress(Bitmap.CompressFormat.PNG,100,out);shot.recycle();
             }
             checkLocalValidation();
+            checkPolishedControls();
             if (arguments != null && "true".equals(arguments.getString("local_model", "false"))) checkNativeGemma();
             String model=arguments==null?"":arguments.getString("model","");
             if(!model.isEmpty()) {
@@ -69,6 +70,14 @@ public final class SmokeInstrumentation extends Instrumentation {
                 require("!document.querySelector('#listen').disabled && document.querySelector('#stop').disabled","Stop did not restore controls");
                 check("Live receiver stop restores controls",true);
             }
+            runOnMainSync(() -> web.loadUrl("https://appassets.androidplatform.net/licenses.html"));
+            waitJs("document.readyState==='complete' && document.body.textContent.includes('第三者ライセンス')",15000);
+            js("window.deniedBridge=true;window.addEventListener('morsetalk-native-result',()=>window.deniedBridge=false);NativeBridge.request(JSON.stringify({id:'c9999999999',method:'localModelStatus',params:{}}));true");
+            SystemClock.sleep(300);
+            require("window.deniedBridge===true", "Display-only licenses gained bridge access");
+            runOnMainSync(() -> web.loadUrl("https://appassets.androidplatform.net/licenses/Apache-2.0.txt"));
+            waitJs("document.readyState==='complete' && document.body.textContent.includes('Apache License')",15000);
+            check("Installed APK serves full license text without granting privileged bridge access",true);
             runOnMainSync(() -> web.loadUrl("https://appassets.androidplatform.net/index.html"));
             waitJs("document.readyState==='complete' && !!document.querySelector('#draft')",30000);
             check("Legacy voice/Morse page remains reachable",js("location.href"));
@@ -92,6 +101,31 @@ public final class SmokeInstrumentation extends Instrumentation {
         check("Local engine validates roles, empty input and user-final history",true);
         require("document.querySelector('#provider').value==='litert' && document.querySelector('#endpoint').disabled", "Android must default to on-device Gemma, not an HTTP server");
         check("Android defaults to local Gemma with no HTTP endpoint",true);
+    }
+    private void checkPolishedControls() throws Exception {
+        for (String name : new String[]{LocalGemma.MODEL, "gemma-4-E2B-it (1).litertlm", "gemma-4-E2B-it(23).litertlm"})
+            if (!LocalGemma.acceptsModelFilename(name)) throw new AssertionError("Valid filename rejected: " + name);
+        for (String name : new String[]{"../../gemma-4-E2B-it.litertlm", "gemma-4-E2B-it.gguf", "gemma-4-E4B-it.litertlm", "gemma-4-E2B-it (abc).litertlm"})
+            if (LocalGemma.acceptsModelFilename(name)) throw new AssertionError("Invalid filename accepted: " + name);
+        check("Native importer accepts numeric duplicate suffix but rejects paths, other models and GGUF",true);
+        js("window.previousSettings={role:document.querySelector('#role').value,provider:document.querySelector('#provider').value,consent:document.querySelector('#consent').checked};document.querySelector('#pairing-code').value='MT2|1234|AABBCCDD|300|4|96';document.querySelector('#apply-code').click();true");
+        waitJs("document.querySelector('#session').value==='AABBCCDD' && document.querySelector('#max-bytes').value==='96'",5000);
+        require("document.querySelector('#role').value===previousSettings.role && document.querySelector('#provider').value===previousSettings.provider && document.querySelector('#consent').checked===previousSettings.consent", "Pairing altered private AI state");
+        check("Installed app applies connection code atomically without altering role, AI provider or consent",true);
+        js("document.querySelector('#pairing-code').value='MT2|0000|20260911|600|8|180';document.querySelector('#apply-code').click();true");
+        waitJs("document.querySelector('#session').value==='20260911'",5000);
+        js("window.progressState=null;(async()=>{const {nativeCall}=await import('https://appassets.androidplatform.net/js/voice.mjs');progressState=await nativeCall('localModelStatus',{},5000);})();true");
+        waitJs("window.progressState!==null",10000);
+        require("Number.isFinite(progressState.freeBytes)&&progressState.freeBytes>0&&Number.isFinite(progressState.copiedBytes)&&typeof progressState.phase==='string'", "Native progress/space schema missing");
+        check("Native status reports real free disk space and bounded import progress fields",true);
+        js("document.querySelector('.jump-links a[href=\"#conversation-panel\"]').click();true");
+        waitJs("location.hash==='#conversation-panel'",5000);
+        js("window.anchorBridge=null;(async()=>{const {nativeCall}=await import('https://appassets.androidplatform.net/js/voice.mjs');anchorBridge=await nativeCall('localModelStatus',{},5000);})();true");
+        waitJs("window.anchorBridge!==null",10000);
+        require("anchorBridge.provider==='litert'", "Same-document navigation broke trusted native bridge");
+        check("In-page navigation works on Android without losing bridge identity",true);
+        // Restore the same document URL (no page reload, no privileged navigation expansion).
+        js("history.replaceState(null,'','https://appassets.androidplatform.net/ai.html');true");
     }
     private void checkNativeGemma() throws Exception {
         report.put("real_local_gemma_tested",false);

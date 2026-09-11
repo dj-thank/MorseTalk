@@ -2,6 +2,7 @@ package jp.morsetalk.app
 
 import android.content.Context
 import android.net.Uri
+import android.os.StatFs
 import android.provider.OpenableColumns
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
@@ -40,6 +41,9 @@ class LocalGemma(context: Context) : AutoCloseable {
     @Volatile private var loadedBackend = ""
     @Volatile private var digest = ""
     @Volatile private var loaded = false
+    @Volatile private var phaseCode = "idle"
+    @Volatile private var copiedBytes = 0L
+    @Volatile private var totalBytes = -1L
     private var engine: Engine? = null
     // Accessed on worker, except cancelProcess, which is guarded against close.
     private var conversation: Conversation? = null
@@ -51,8 +55,12 @@ class LocalGemma(context: Context) : AutoCloseable {
         .put("busy", busy.get()).put("backend", loadedBackend)
         .put("bytes", modelFile.length()).put("sha256", digest)
         .put("identityVerified", false)
+        .put("phase", phaseCode).put("copiedBytes", copiedBytes).put("totalBytes", totalBytes)
+        .put("freeBytes", availableBytes())
         .put("description", "Gemma 4 E2B · $phase · " +
             if (modelFile.isFile) "モデル ${(modelFile.length() / 1048576)} MiB。端末内のみ。" else "gemma-4-E2B-it.litertlm を取り込んでください。")
+
+    private fun availableBytes(): Long = StatFs(app.filesDir.absolutePath).availableBytes
 
     private fun checkCurrent(id: Long) {
         if (closed || id != epoch.get()) throw CancellationException("停止しました。")
@@ -81,6 +89,7 @@ class LocalGemma(context: Context) : AutoCloseable {
             } finally {
                 if (id != epoch.get()) discardConversation()
                 phase = if (loaded) "読込済み ($loadedBackend)" else "未読込"
+                phaseCode = "idle"
                 busy.set(false) // Do not admit another native operation before this one has actually exited.
                 if (!closed && id == epoch.get()) callback.done(result, error)
             }
@@ -103,6 +112,7 @@ class LocalGemma(context: Context) : AutoCloseable {
         releaseEngine()
         check(modelFile.isFile && modelFile.length() >= MIN_BYTES) { "Gemma 4 E2Bモデルを取り込んでください。" }
         phase = "読み込み中 ($backendName)"
+        phaseCode = "loading"
         val cache = File(app.cacheDir, "gemma4-$backendName").apply { mkdirs() }
         val start = System.nanoTime()
         // Respect the .litertlm model's KV-cache default; no maxNumTokens override.
@@ -140,6 +150,7 @@ class LocalGemma(context: Context) : AutoCloseable {
             val loadMs = ensureLoaded(id, selected)
             checkCurrent(id)
             phase = "生成中 ($selected)"
+            phaseCode = "generating"
             val reused = conversation != null && messages.size == history.size + 1 && messages.dropLast(1) == history
             if (!reused) {
                 discardConversation()
@@ -176,6 +187,9 @@ class LocalGemma(context: Context) : AutoCloseable {
         require(uri.scheme == "content") { "ファイル選択画面からモデルを選んでください。" }
         work(callback) { id ->
             phase = "モデル取り込み中"
+            phaseCode = "importing"
+            copiedBytes = 0L
+            totalBytes = -1L
             var name: String? = null
             var expected = -1L
             app.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
@@ -186,10 +200,11 @@ class LocalGemma(context: Context) : AutoCloseable {
                     if (si >= 0 && !c.isNull(si)) expected = c.getLong(si)
                 }
             }
-            require(name == MODEL) { "選択するファイル名は $MODEL です。GGUFは取り込めません。" }
+            require(acceptsModelFilename(name)) { "選択するファイル名は $MODEL です。GGUFは取り込めません。" }
             require(expected == -1L || expected in MIN_BYTES..MAX_BYTES) { "モデルのサイズが不正です。" }
+            totalBytes = expected
             check(directory.isDirectory || directory.mkdirs()) { "モデル保存先を作れません。" }
-            check(directory.usableSpace >= (if (expected > 0) expected else MIN_BYTES) + RESERVE_BYTES) { "モデルのコピーに必要な空き容量がありません。" }
+            check(availableBytes() >= (if (expected > 0) expected else MIN_BYTES) + RESERVE_BYTES) { "モデルのコピーに必要な空き容量がありません。" }
             val temporary = File.createTempFile("gemma4-", ".part", directory)
             try {
                 val hash = MessageDigest.getInstance("SHA-256")
@@ -204,9 +219,10 @@ class LocalGemma(context: Context) : AutoCloseable {
                             if (n < 0) break
                             size += n
                             require(size <= MAX_BYTES) { "モデルサイズの上限を超えました。" }
-                            check(directory.usableSpace >= RESERVE_BYTES + n) { "モデル取り込み中に空き容量が不足しました。" }
+                            check(availableBytes() >= RESERVE_BYTES + n) { "モデル取り込み中に空き容量が不足しました。" }
                             output.write(buffer, 0, n)
                             hash.update(buffer, 0, n)
+                            copiedBytes = size
                         }
                         output.fd.sync()
                     }
@@ -229,7 +245,7 @@ class LocalGemma(context: Context) : AutoCloseable {
         synchronized(guard) {
             try { conversation?.cancelProcess() } catch (_: Exception) { }
         }
-        if (busy.get()) phase = "停止処理中"
+        if (busy.get()) { phase = "停止処理中"; phaseCode = "cancelling" }
         // Initializing a native engine cannot be interrupted safely. The result is discarded
         // and its engine is closed when initialize returns; no late reply can be transmitted.
     }
@@ -265,6 +281,10 @@ class LocalGemma(context: Context) : AutoCloseable {
         private const val MIN_BYTES = 100L * 1024 * 1024
         private const val MAX_BYTES = 4L * 1024 * 1024 * 1024
         private const val RESERVE_BYTES = 256L * 1024 * 1024
+
+        /** Android/browser downloads can append a numeric duplicate suffix. The runtime model is unchanged. */
+        @JvmStatic fun acceptsModelFilename(name: String?): Boolean =
+            name != null && Regex("^gemma-4-E2B-it(?: ?\\([1-9][0-9]{0,2}\\))?\\.litertlm$").matches(name)
 
         @JvmStatic fun validateMessages(input: JSONArray): List<Pair<String, String>> {
             require(input.length() in 1..25) { "履歴は1〜25件です。" }

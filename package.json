@@ -1,6 +1,6 @@
 {
   "name": "morsetalk",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Offline-first voice \u2194 acoustic Morse translator for Windows and Android",
   "type": "module",

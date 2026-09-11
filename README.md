@@ -1,3 +1,9 @@
+# MorseTalk 0.3.1
+
+Gemma 4 E2Bの端末内推論を維持し、準備案内・取り込み進捗・接続コード・常に押せる停止・診断ログを追加しました。使い方と検証範囲は `docs/POLISH-0.3.1.md`、モデル導入は `docs/GEMMA4-E2B.md` を参照してください。
+
+---
+
 # 0.3.0 Gemma 4 E2B 更新
 
 Androidは端末内LiteRT-LM、WindowsはOllama gemma4:e2b-it-qatです。現在の導入・ビルド手順は `docs/GEMMA4-E2B.md` を参照してください。
