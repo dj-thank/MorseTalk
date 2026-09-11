@@ -21,8 +21,14 @@ export class FastAudio {
       this.mute=this.ctx.createGain();this.mute.gain.value=0;
       this.source.connect(this.node);this.node.connect(this.mute);this.mute.connect(this.ctx.destination);
       this.node.port.onmessage=e=>{if(!this.closed&&generation===this.generation)onEvent(e.data);};
-      this.node.onprocessorerror=()=>onEvent({kind:'fatal',message:'音響処理が停止しました。'});
-      for(const track of stream.getTracks())track.onended=()=>onEvent({kind:'fatal',message:'マイクが切断されました。'});
+      // A failed processor or revoked microphone must not leave TX awaiting
+      // onended forever. Ignore already-queued callbacks from older sessions.
+      const fatal=message=>{
+        if(this.closed||generation!==this.generation)return;
+        this.stop();onEvent({kind:'fatal',message});
+      };
+      this.node.onprocessorerror=()=>fatal('音響処理が停止しました。');
+      for(const track of stream.getTracks())track.onended=()=>fatal('マイクが切断されました。');
       return {sampleRate:this.ctx.sampleRate,baseLatency:this.ctx.baseLatency,outputLatency:this.ctx.outputLatency};
     }catch(e){if(generation===this.generation)this.stop();throw e;}
     finally{if(url?.startsWith('blob:'))URL.revokeObjectURL(url);}
@@ -52,9 +58,19 @@ export class FastAudio {
   stop(){
     this.closed=true;++this.generation;
     if(this.job){const job=this.job;try{job.source.stop();}catch{}job.finish(new Error('音声送信を停止しました。'));}
-    if(this.node){this.node.port.onmessage=null;this.node.port.postMessage({kind:'stop'});this.node.disconnect();this.node=null;}
-    for(const t of this.stream?.getTracks()||[]){t.onended=null;t.stop();}this.stream=null;
-    this.source?.disconnect();this.source=null;this.mute?.disconnect();this.mute=null;
-    const ctx=this.ctx;this.ctx=null;if(ctx&&ctx.state!=='closed')ctx.close().catch(()=>{});
+    // Tear down every resource even if one already-terminated node throws.
+    const node=this.node;this.node=null;
+    if(node){
+      node.port.onmessage=null;node.onprocessorerror=null;
+      try{node.port.postMessage({kind:'stop'});}catch{}
+      try{node.disconnect();}catch{}
+    }
+    const stream=this.stream;this.stream=null;
+    for(const t of stream?.getTracks()||[]){t.onended=null;try{t.stop();}catch{}}
+    const source=this.source,mute=this.mute;this.source=null;this.mute=null;
+    try{source?.disconnect();}catch{}
+    try{mute?.disconnect();}catch{}
+    const ctx=this.ctx;this.ctx=null;
+    if(ctx&&ctx.state!=='closed'){try{ctx.close().catch(()=>{});}catch{}}
   }
 }

@@ -1,96 +1,48 @@
 name: MorseTalk build and real verification
 on:
   push:
+    paths-ignore: ['docs/**', '**.md']
   pull_request:
+    paths-ignore: ['docs/**', '**.md']
   workflow_dispatch:
+defaults:
+  run:
+    shell: bash
 permissions:
   contents: read
 concurrency:
   group: morsetalk-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    outputs:
-      sha: ${{ steps.source.outputs.sha }}
-      ready: ${{ steps.source.outputs.ready }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Import verified source archive once, then use ordinary tracked source
-        id: source
-        env:
-          EVENT: ${{ github.event_name }}
-          SOURCE_REF: ${{ github.ref_name }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -f .bootstrap/manifest.json ]; then
-            test "$EVENT" = push && test "$SOURCE_REF" = main
-            python3 - <<'PY'
-          import hashlib,json,lzma
-          from pathlib import Path,PurePosixPath
-          manifest=json.loads(Path('.bootstrap/manifest.json').read_text())
-          parts=manifest['parts']
-          assert 1<=len(parts)<=32
-          for name in parts:
-              assert name.startswith('part-') and len(name)==8 and name[5:].isdigit()
-          packed=b''.join((Path('.bootstrap')/name).read_bytes() for name in parts)
-          assert len(packed)<500000 and hashlib.sha256(packed).hexdigest()==manifest['sha256']
-          decoder=lzma.LZMADecompressor(memlimit=128*1024*1024)
-          raw=decoder.decompress(packed,max_length=2*1024*1024)
-          assert decoder.eof and not decoder.unused_data
-          files=json.loads(raw)
-          assert len(files)==manifest['files'] and len(files)<=200
-          for name,text in files.items():
-              path=PurePosixPath(name)
-              assert not path.is_absolute() and not any(p in ('..','.git','.github','.bootstrap') for p in path.parts)
-              assert '\\' not in name and ':' not in name and isinstance(text,str)
-              target=Path(name)
-              assert not target.is_symlink()
-              target.parent.mkdir(parents=True,exist_ok=True)
-              target.write_text(text,encoding='utf-8')
-              if name.endswith('.sh'): target.chmod(0o755)
-          print('Imported',len(files),'source files; archive SHA256:',manifest['sha256'])
-          PY
-            git rm -r .bootstrap
-            git add --all
-            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Import verified MorseTalk source and executable verification suite'
-            git push origin "HEAD:$SOURCE_REF"
-          fi
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          if [ -f app/ai.html ]; then echo 'ready=true' >> "$GITHUB_OUTPUT"; else echo 'ready=false' >> "$GITHUB_OUTPUT"; fi
   core-browser:
-    needs: prepare
-    if: needs.prepare.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-          persist-credentials: false
+        with: {persist-credentials: false}
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
+        with: {node-version: '22'}
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Execute core and server tests inside Docker
+        with: {python-version: '3.12'}
+      - name: Execute the complete core and server tests in Docker
         run: |
           mkdir -p test-results
+          git rev-parse HEAD > test-results/source-commit.txt
           docker build -t morsetalk-test .
           docker run --rm morsetalk-test 2>&1 | tee test-results/container-tests.log
       - run: node scripts/build.mjs
       - run: python -m pip install playwright==1.57.0
       - run: python -m playwright install --with-deps chromium
-      - run: python tools/test_ai_ui.py
-      - run: python tools/test_ui_inmemory.py
-      - run: python tools/test_ui.py
-      - name: Actual browser microphone path and AudioWorklet at four speeds
+      - name: In-memory AI and legacy UI regression tests
+        run: |
+          python tools/test_ai_ui.py
+          python tools/test_ui_inmemory.py
+      - name: Real browser, WAV import, fake microphone, stop and lifecycle
+        run: python tools/test_ui.py
+      - name: Production AudioWorklet at all four speeds using Chromium WAV capture
         run: python tools/test_fast_browser.py
+      - name: Four real-time audio turns with an explicitly identified AI test double
+        run: python tools/test_audio_pair.py
       - run: node tools/benchmark_fast.mjs
       - uses: actions/upload-artifact@v4
         if: always()
@@ -99,44 +51,49 @@ jobs:
           path: test-results/
           retention-days: 14
   windows:
-    needs: prepare
-    if: needs.prepare.outputs.ready == 'true'
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-          persist-credentials: false
-      - name: Real Windows PowerShell launcher smoke
+        with: {persist-credentials: false}
+      - name: Actual Windows PowerShell launcher and loopback-server smoke test
         shell: powershell
-        run: ./windows/smoke-test.ps1
+        run: |
+          New-Item -ItemType Directory -Force test-results | Out-Null
+          git rev-parse HEAD | Out-File test-results/source-commit.txt -Encoding ascii
+          ./windows/smoke-test.ps1 | Tee-Object -FilePath test-results/windows-smoke.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-evidence
+          path: test-results/
+          retention-days: 14
   real-ai-audio:
-    needs: prepare
-    if: needs.prepare.outputs.ready == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    env:
-      MORSETALK_AI_MODEL: qwen2.5:0.5b
+    timeout-minutes: 20
+    env: {MORSETALK_AI_MODEL: 'qwen2.5:0.5b'}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-          persist-credentials: false
+        with: {persist-credentials: false}
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
+        with: {node-version: '22'}
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: bash tools/start_ci_model.sh
+        with: {python-version: '3.12'}
+      - name: Record source and start actual local model in bounded Docker container
+        run: |
+          mkdir -p test-results
+          git rev-parse HEAD > test-results/source-commit.txt
+          bash tools/start_ci_model.sh
       - run: python -m pip install playwright==1.57.0
       - run: python -m playwright install --with-deps chromium
-      - name: Real LLM A -> real-time audio -> LLM B, four bounded turns
+      - name: Real LLM A -> real-time PCM/AudioWorklet -> real LLM B, four turns
         run: python tools/test_real_ai.py
-      - name: Collect model logs
+      - name: Record model logs and tested source
         if: always()
-        run: docker logs morsetalk-ollama > test-results/ollama.log 2>&1 || true
+        run: |
+          mkdir -p test-results
+          docker logs morsetalk-ollama > test-results/ollama.log 2>&1 || true
+          git archive --format=zip -o test-results/source-tested.zip HEAD
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -146,65 +103,67 @@ jobs:
       - if: always()
         run: docker rm -f morsetalk-ollama || true
   android:
-    needs: prepare
-    if: needs.prepare.outputs.ready == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-    env:
-      MORSETALK_AI_MODEL: qwen2.5:0.5b
+    timeout-minutes: 30
+    env: {MORSETALK_AI_MODEL: 'qwen2.5:0.5b'}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-          persist-credentials: false
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v4
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
-      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Compile application, test APK and Android Lint
-        working-directory: android
-        run: gradle --no-daemon --console=plain assembleDebug assembleDebugAndroidTest lintDebug
-      - name: Verify debug APK signature
+        with: {gradle-version: '8.11.1'}
+      - name: Prepare SDK and source evidence
         run: |
           mkdir -p test-results/android
+          git rev-parse HEAD > test-results/source-commit.txt
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compile application and instrumentation APK
+        id: build
+        working-directory: android
+        run: gradle --no-daemon --console=plain assembleDebug assembleDebugAndroidTest
+      - name: Verify debug APK signature and SHA256
+        run: |
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee test-results/android/apk-signature.txt
-          sha256sum android/app/build/outputs/apk/debug/app-debug.apk > test-results/android/APK-SHA256.txt
+          sha256sum android/app/build/outputs/apk/debug/app-debug.apk | tee test-results/android/APK-SHA256.txt
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: MorseTalk-debug-apk
+          name: MorseTalk-installable-debug-APK
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
+            test-results/source-commit.txt
             test-results/android/APK-SHA256.txt
             test-results/android/apk-signature.txt
           if-no-files-found: error
           retention-days: 14
       - run: bash tools/start_ci_model.sh
-      - name: Enable hosted runner KVM
+      - name: Enable hosted-runner KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Install APK, launch app, load worklet, test actual Java AI bridge
+      - name: Installed app, WebView, actual Java AI call, virtual microphone start and stop
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           target: google_apis
           arch: x86_64
-          profile: pixel_7_pro
+          profile: pixel_2
           cores: 2
-          ram-size: 2048M
+          ram-size: 3072M
           disable-animations: true
           script: bash tools/android_smoke.sh
-      - name: Collect model logs
+      - name: Android Lint independently of emulator success
+        if: always() && steps.build.outcome == 'success'
+        working-directory: android
+        run: gradle --no-daemon --console=plain lintDebug
+      - name: Collect logs and explicit verification scope
         if: always()
         run: |
           mkdir -p test-results
           docker logs morsetalk-ollama > test-results/ollama.log 2>&1 || true
+          printf 'Android is an emulator. The LLM inference is real. Physical speaker/microphone transmission and physical-device ASR are not tested.\n' > test-results/SCOPE.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
