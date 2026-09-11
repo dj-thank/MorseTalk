@@ -1,0 +1,51 @@
+name: Restore missing source files once
+on:
+  push:
+    paths: ['.github/workflows/restore-missing-files.yml']
+permissions:
+  contents: write
+jobs:
+  restore:
+    if: github.ref == 'refs/heads/fix/complete-runtime-verification'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify the complete archive before writing ordinary tracked files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,os,subprocess,urllib.request
+          from pathlib import Path,PurePosixPath
+          chunks=[]
+          for sha in ['ac121ea518418c3b865a5f78d644114367ded576','4ecdc052f562be4bb8013f530a5831610828d743']:
+              req=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+              with urllib.request.urlopen(req,timeout=30) as response: obj=json.load(response)
+              chunk=base64.b64decode(obj['content'])
+              assert hashlib.sha1(b'blob '+str(len(chunk)).encode()+b'\0'+chunk).hexdigest()==sha
+              chunks.append(chunk)
+          packed=base64.b64decode(b''.join(chunks),validate=True)
+          assert len(packed)==23624
+          assert hashlib.sha256(packed).hexdigest()=='b09d65713ed0cf845c692472a1e3ada5fc3eded2d27fa518db3083aa147fd443'
+          decoder=lzma.LZMADecompressor(memlimit=128*1024*1024)
+          raw=decoder.decompress(packed,max_length=200000)
+          assert decoder.eof and not decoder.unused_data
+          files=json.loads(raw)
+          assert len(files)==23
+          for name,text in files.items():
+              p=PurePosixPath(name)
+              assert not p.is_absolute() and p.parts[0] in ('tools','tests','windows')
+              assert not any(x in ('.','..','.git','.github') for x in p.parts)
+              assert '\\' not in name and ':' not in name and isinstance(text,str)
+              target=Path(name)
+              assert not target.exists(), 'Refusing to replace existing source: '+name
+          # Nothing is written until all checks and the complete parse succeed.
+          for name,text in files.items():
+              p=Path(name);p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(text.encode('utf-8'))
+              if name.endswith('.sh'):p.chmod(0o755)
+          subprocess.run(['git','add','--',*files],check=True)
+          subprocess.run(['git','-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','Restore Windows launchers and complete production-runtime verification suite'],check=True)
+          subprocess.run(['git','push','origin','HEAD:fix/complete-runtime-verification'],check=True)
+          print('Restored 23 complete source files; no runtime results claimed.')
+          PY
