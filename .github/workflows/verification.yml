@@ -25,12 +25,13 @@ jobs:
           tar -xzf jsqr-1.4.0.tgz -C decoder
           cp encoder/package/qrcode.js "$GITHUB_WORKSPACE/out/app/vendor/qrcode.js"
           cp decoder/package/dist/jsQR.js "$GITHUB_WORKSPACE/out/app/vendor/jsQR.js"
-          cp encoder/package/LICENSE "$GITHUB_WORKSPACE/out/app/licenses/qrcode-generator.txt"
+          cp encoder/package/README.md "$GITHUB_WORKSPACE/out/app/licenses/qrcode-generator-README.txt"
           cp decoder/package/LICENSE "$GITHUB_WORKSPACE/out/app/licenses/jsQR.txt"
           cp npm-packs.json "$GITHUB_WORKSPACE/out/npm-packs.json"
           cd "$GITHUB_WORKSPACE/out"
           sha256sum app/vendor/* app/licenses/* > QR-SHA256.txt
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: pinned-offline-qr-libraries
           path: out/
