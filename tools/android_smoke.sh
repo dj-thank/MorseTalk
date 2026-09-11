@@ -15,7 +15,8 @@ adb logcat -c
 adb install -r -g android/app/build/outputs/apk/debug/app-debug.apk
 adb install -r -g android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb reverse tcp:11434 tcp:11434
+adb reverse tcp:8787 tcp:8787
 adb shell am instrument -w -r -e model "${MORSETALK_AI_MODEL:-gemma4:e2b-it-qat}" \
-  jp.morsetalk.app.test/jp.morsetalk.app.SmokeInstrumentation | tee test-results/android/instrumentation.txt
+  -e online_relay ws://127.0.0.1:8787/v1 jp.morsetalk.app.test/jp.morsetalk.app.SmokeInstrumentation | tee test-results/android/instrumentation.txt
 grep -q MORSETALK_SMOKE_OK test-results/android/instrumentation.txt
 ! grep -q MORSETALK_SMOKE_FAILED test-results/android/instrumentation.txt

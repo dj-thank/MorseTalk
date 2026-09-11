@@ -36,7 +36,7 @@ html=html.replace('<link rel="stylesheet" href="style.css">',`<style>\n${css}\n<
   .replace('<link rel="manifest" href="manifest.webmanifest">','')
   .replace('href="icon.svg"',`href="data:image/svg+xml;base64,${icon}"`)
   .replace('__MORSETALK_TOKEN__','')
-  .replace('<script type="module" src="js/app.mjs"></script>',`<script>\n${script}\n</script>`);
+  .replace('<script type="module" src="js/app.mjs"></script>',()=>`<script>\n${script}\n</script>`);
 await fs.mkdir(path.join(root,'dist'),{recursive:true});
 await fs.writeFile(path.join(root,'dist/MorseTalk-Portable.html'),html);
 await fs.mkdir(path.join(root,'examples'),{recursive:true});
@@ -59,7 +59,8 @@ const fastMain=await bundle('app/js/ai-app.mjs'),fastWorklet=await bundle('app/j
 let aiHtml=await fs.readFile(path.join(root,'app/ai.html'),'utf8');
 const aiCss=await fs.readFile(path.join(root,'app/ai.css'),'utf8');
 const aiScript=(`globalThis.__FAST_WORKLET_SOURCE__=${JSON.stringify(fastWorklet)};\n${fastMain}`).replace(/<\/script/gi,'<\\/script');
-aiHtml=aiHtml.replace('href="index.html"','href="MorseTalk-Portable.html"').replace('<link rel="stylesheet" href="ai.css">',`<style>${aiCss}</style>`).replace('href="icon.svg"',`href="data:image/svg+xml;base64,${icon}"`).replace('__MORSETALK_TOKEN__','').replace('<script type="module" src="js/ai-app.mjs"></script>',`<script>${aiScript}</script>`);
+aiHtml=aiHtml.replace('href="index.html"','href="MorseTalk-Portable.html"').replace('<link rel="stylesheet" href="ai.css">',`<style>${aiCss}</style>`).replace('href="icon.svg"',`href="data:image/svg+xml;base64,${icon}"`).replace('__MORSETALK_TOKEN__','').replace('<script type="module" src="js/ai-app.mjs"></script>',()=>`<script>${aiScript}</script>`);
+for(const vendor of ['qrcode','jsQR']){const source=await fs.readFile(path.join(root,'app/vendor',vendor+'.js'),'utf8');aiHtml=aiHtml.replace(`<script src="vendor/${vendor}.js"></script>`,()=>`<script>${source.replace(/<\/script/gi,'<\\/script')}</script>`);}
 await fs.writeFile(path.join(root,'dist/MorseTalk-AI-Portable.html'),aiHtml);
 console.log(`Built dist/MorseTalk-AI-Portable.html (${Buffer.byteLength(aiHtml)} bytes).`);
 

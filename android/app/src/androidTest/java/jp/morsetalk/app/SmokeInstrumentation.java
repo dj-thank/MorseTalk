@@ -56,6 +56,8 @@ public final class SmokeInstrumentation extends Instrumentation {
             }
             checkLocalValidation();
             checkPolishedControls();
+            checkQRControls();
+            if(arguments!=null&&!arguments.getString("online_relay", "").isEmpty())checkOnlineRelay(arguments.getString("online_relay"));
             if (arguments != null && "true".equals(arguments.getString("local_model", "false"))) checkNativeGemma();
             String model=arguments==null?"":arguments.getString("model","");
             if(!model.isEmpty()) {
@@ -83,6 +85,35 @@ public final class SmokeInstrumentation extends Instrumentation {
             result.putString("stream",(ok?"MORSETALK_SMOKE_OK":"MORSETALK_SMOKE_FAILED")+"\n"+report.toString()+"\n");
             finish(ok?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);
         }
+    }
+    private void checkQRControls() throws Exception {
+        js("document.querySelector('#show-acoustic-qr').click();true");
+        require("(()=>{const c=document.querySelector('#pair-qr'),d=c.getContext('2d').getImageData(0,0,c.width,c.height);window.scannedPair=jsQR(d.data,d.width,d.height).data;return scannedPair.startsWith('MT2|');})()", "QR roundtrip failed");
+        check("Bundled QR encoder and decoder round-trip actual Android canvas pixels",true);
+        js("document.querySelector('#qr-input').value=scannedPair;document.querySelector('#qr-stage').click();true");
+        require("!document.querySelector('#qr-apply').disabled && document.querySelector('#stop').disabled", "QR preview started work");
+        js("document.querySelector('#qr-apply').click();true");
+        require("document.querySelector('#transport').value==='acoustic' && document.querySelector('#stop').disabled", "QR apply started work");
+        check("QR preview and apply preserve no-auto-start and no-consent-grant behavior",true);
+        for(int attempt=0;attempt<3;attempt++) {
+            tap("#scan-qr");
+            waitJs("document.querySelector('#qr-video').videoWidth>0 && document.querySelector('#qr-video').readyState>=2",20000);
+            js("window.cameraTracks=[...document.querySelector('#qr-video').srcObject.getTracks()];true");
+            tap("#qr-camera-stop");
+            waitJs("cameraTracks.every(t=>t.readyState==='ended') && !document.querySelector('#scan-qr').disabled && document.querySelector('#qr-camera').hidden",10000);
+        }
+        check("Actual Android camera permission and WebView capture start, repeated three times",true);
+        check("Verified touch target stops every camera track and restores controls on three restarts",true);
+    }
+    private void checkOnlineRelay(String endpoint) throws Exception {
+        byte[] source;
+        try(java.io.InputStream in=getContext().getAssets().open("online-proof.js");java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()) {
+            byte[] buffer=new byte[4096];int n;while((n=in.read(buffer))!=-1)out.write(buffer,0,n);source=out.toByteArray();
+        }
+        js("window.onlineProof=null;window.proofRelay="+JSONObject.quote(endpoint)+";"+new String(source,StandardCharsets.UTF_8)+"true");
+        waitJs("window.onlineProof!==null",45000);
+        require("onlineProof.ok", "WebView online transport failed: "+js("JSON.stringify(onlineProof)"));
+        check("Actual Android WebSocket, AES-GCM and relay: four exact Morse messages and ACKs",js("JSON.stringify(onlineProof)"));
     }
     private void checkLocalValidation() throws Exception {
         LocalGemma.validateMessages(new JSONArray("[{\"role\":\"user\",\"content\":\"こんにちは\"}]"));
@@ -177,8 +208,24 @@ public final class SmokeInstrumentation extends Instrumentation {
     private void require(String expression,String reason)throws Exception {if(!"true".equals(js(expression)))throw new AssertionError(reason);}
     private void waitJs(String expression,long timeout)throws Exception {long end=SystemClock.elapsedRealtime()+timeout;while(SystemClock.elapsedRealtime()<end){if("true".equals(js(expression)))return;SystemClock.sleep(100);}throw new AssertionError("Timed out: "+expression+"; status="+js("document.querySelector('#status')?.textContent"));}
     private void tap(String selector)throws Exception {
-        String json=js("JSON.stringify((()=>{const e=document.querySelector("+JSONObject.quote(selector)+");e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,dpr:devicePixelRatio};})())");
-        JSONObject point=new JSONObject(new JSONArray("["+json+"]").getString(0));
+        // A DOM scroll and video metadata can precede the native compositor.
+        // Wait for stable, unobstructed coordinates rather than tapping a stale rectangle.
+        String expression="JSON.stringify((()=>{const e=document.querySelector("+JSONObject.quote(selector)+");if(!e||e.disabled)return null;const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return {x,y,dpr:devicePixelRatio,hit:e.contains(document.elementFromPoint(x,y))};})())";
+        js("(()=>{document.querySelector("+JSONObject.quote(selector)+").scrollIntoView({block:'center',behavior:'instant'});return true;})()");
+        JSONObject point=null;double lastX=Double.NaN,lastY=Double.NaN;int stable=0;
+        long deadline=SystemClock.elapsedRealtime()+5000;
+        while(SystemClock.elapsedRealtime()<deadline) {
+            SystemClock.sleep(150);
+            String json=js(expression);
+            String decoded=new JSONArray("["+json+"]").optString(0,"null");
+            if("null".equals(decoded)){stable=0;continue;}
+            JSONObject next=new JSONObject(decoded);
+            double x=next.getDouble("x"),y=next.getDouble("y");
+            if(next.getBoolean("hit")&&Math.abs(x-lastX)<1&&Math.abs(y-lastY)<1)stable++;else stable=0;
+            lastX=x;lastY=y;
+            if(stable>=2){point=next;break;}
+        }
+        if(point==null)throw new AssertionError("Touch target never stabilized: "+selector+"; "+js(expression));
         int[] offset=new int[2];runOnMainSync(()->web.getLocationOnScreen(offset));
         float x=offset[0]+(float)(point.getDouble("x")*point.getDouble("dpr")),y=offset[1]+(float)(point.getDouble("y")*point.getDouble("dpr"));
         long now=SystemClock.uptimeMillis();

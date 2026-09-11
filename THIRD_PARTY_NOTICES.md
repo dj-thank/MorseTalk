@@ -30,3 +30,6 @@ Ollama and llama.cpp are optional, separately installed backends. Their executab
 
 ## 0.3.0 runtime
 APK includes unmodified LiteRT-LM0.17.0 and Kotlin/coroutines dependencies (Apache-2.0). License text and attribution are in assets/licenses. Model weights are not bundled. Other upstream native dependencies retain their respective terms; a complete source-level native audit is not claimed.
+
+## 0.4.0 QR and relay
+Unmodified qrcode-generator1.4.4 (MIT) and jsQR1.4.0 (Apache-2.0) browser distributions are vendored with local attribution/license files. There are no runtime CDN requests. Python websockets16.0 (BSD-3-Clause) is installed for the separately deployed relay. Caddy2.10.2 (Apache-2.0) is a separately downloaded reverse-proxy image, not an APK component. Fixed QR source digests and registry metadata: docs/QR-LIBRARY-PROVENANCE.json.

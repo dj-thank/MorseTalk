@@ -1,0 +1,12 @@
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 1
+    ports: ["127.0.0.1:8787:8787"]
+    environment:
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
