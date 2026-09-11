@@ -210,11 +210,7 @@ jobs:
           ram-size: 3072M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back emulated -camera-front emulated
-          script: |
-            bash tools/android_smoke.sh
-            export MORSETALK_PLAYWRIGHT_MODULE="$(python -c 'import pathlib,playwright; print(pathlib.Path(playwright.__file__).parent / "driver" / "package")')"
-            export PYTHON="$(command -v python)"
-            node tools/test_pc_android.cjs
+          script: bash tools/android_pc_chat.sh
       - name: Collect logs and verification scope
         if: always()
         run: |
