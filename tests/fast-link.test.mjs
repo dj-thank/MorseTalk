@@ -35,3 +35,29 @@ test('AI inference overlaps ACK delay, but reply sound never overtakes the ACK',
  await b.receive({type:'data',room:'0000',session:77,sender:0,seq:1,text:'質問'});
  assert.deepEqual(order,['inference','ack','data']);a.stop();
 });
+
+test('Many duplicate frames share one queued ACK and never generate twice',async()=>{
+ const output=[],input=[];
+ const link=new ReliableMorseLink({session:77,sender:1,ackDelayMs:20,sendAudio:async bytes=>output.push(unpackFastFrame(bytes)),onData:f=>input.push(f)});
+ const f={type:'data',room:'0000',session:77,sender:0,seq:1,text:'はい'};
+ await Promise.all(Array.from({length:40},()=>link.receive(f)));
+ assert.equal(output.length,1);assert.equal(input.length,1);assert.equal(link.pendingAcks.size,0);
+ await link.receive(f);assert.equal(output.length,2);assert.equal(input.length,1);link.close();
+});
+test('ACK backpressure preserves receive sequence so a dropped frame can be retried',async()=>{
+ const link=new ReliableMorseLink({session:77,sender:1,ackDelayMs:25,sendAudio:async()=>{}});
+ const frame=seq=>({type:'data',room:'0000',session:77,sender:0,seq,text:'はい'});
+ const pending=[1,3,5,7].map(seq=>link.receive(frame(seq)));
+ assert.equal(await link.receive(frame(9)),false);assert.equal(link.nextReceive,9);
+ assert.ok(!link.incoming.has(9));assert.equal(link.pendingAcks.size,4);
+ await Promise.all(pending);assert.equal(await link.receive(frame(9)),true);assert.equal(link.nextReceive,11);link.close();
+});
+test('Closing a link discards queued ACK work and emits closed exactly once',async()=>{
+ let sounds=0,closes=0;const link=new ReliableMorseLink({session:77,sender:1,ackDelayMs:100,sendAudio:async()=>sounds++,onEvent:e=>{if(e.kind==='closed')closes++;}});
+ const pending=link.receive({type:'data',room:'0000',session:77,sender:0,seq:1,text:'x'});
+ link.close();link.close();await pending;assert.equal(sounds,0);assert.equal(closes,1);assert.equal(link.pendingAcks.size,0);
+});
+test('Invalid or unbounded conversation goals are rejected before inference',()=>{
+ const link=new ReliableMorseLink({session:77,sender:1,sendAudio:async()=>{}});
+ for(const goal of ['', ' ',null,'あ'.repeat(601)])assert.throws(()=>new MorseAgent({link,goal,generate:async()=>''}));link.close();
+});

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1
+- Add readiness checklist, pairing-code validation, editable topic presets, reachable stop and session counters.
+- Show native copy progress and free storage; preserve busy state until native work really exits.
+- Ignore stale cancelled preload failures; export bounded diagnostics without conversation text by default.
+- Coalesce duplicate ACK work and bound ACK backlog without advancing rejected sequence state.
+- Support numeric duplicate model filenames; make offline licenses readable without granting bridge access.
+- Add native navigation/progress contract, privacy, lifecycle and duplicate-reception regression tests.
+
+
 ## 0.2.2
 - Restore missing Windows launchers and verification source as ordinary tracked files.
 - Fix WebView microphone startup by requesting MODIFY_AUDIO_SETTINGS in addition to RECORD_AUDIO.

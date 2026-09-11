@@ -8,7 +8,7 @@ export class ReliableMorseLink {
     packFastFrame({room,session,sender,seq:1,text:'test'});
     if(typeof sendAudio!=='function'||!Number.isFinite(ackDelayMs)||ackDelayMs<0||ackDelayMs>5000||!Number.isFinite(ackTimeoutMs)||ackTimeoutMs<1||ackTimeoutMs>30000||!Number.isInteger(maxRetries)||maxRetries<0||maxRetries>2)throw new Error('リンク設定が不正です。');
     Object.assign(this,{room,session,sender,sendAudio,onData,onEvent,ackDelayMs,ackTimeoutMs,maxRetries});
-    this.open=true;this.queue=Promise.resolve();this.pending=null;this.incoming=new Map();this.nextReceive=sender===0?2:1;this.nextSend=sender===0?1:2;
+    this.open=true;this.queue=Promise.resolve();this.pending=null;this.incoming=new Map();this.pendingAcks=new Map();this.nextReceive=sender===0?2:1;this.nextSend=sender===0?1:2;
   }
   event(kind,detail={}){this.onEvent({kind,...detail});}
   enqueue(bytes){
@@ -47,6 +47,11 @@ export class ReliableMorseLink {
     if(known!==undefined&&known!==frame.text){this.event('invalid',{message:'同じ連番の内容が異なります。新しいセッションが必要です。'});return false;}
     if(known===undefined&&frame.seq!==this.nextReceive){this.event('invalid',{message:'順序外のデータを破棄しました。'});return false;}
     const duplicate=known!==undefined;
+    // Echoes/retransmits must not queue unbounded ACK audio or delay the real reply.
+    // Do not advance sequence state for a frame we cannot currently acknowledge.
+    if(!this.pendingAcks.has(frame.seq)&&this.pendingAcks.size>=4){
+      this.event('invalid',{message:'受信確認キューが混雑しています。再送を待ちます。'});return false;
+    }
     if(!duplicate){
       this.incoming.set(frame.seq,frame.text);this.nextReceive+=2;
       while(this.incoming.size>64)this.incoming.delete(this.incoming.keys().next().value);
@@ -56,12 +61,16 @@ export class ReliableMorseLink {
     this.event(duplicate?'duplicate':'receive',{seq:frame.seq,text:frame.text});
     // Queue the turnaround immediately, so an AI reply can never jump ahead of its ACK.
     const ack=packFastFrame({room:this.room,session:this.session,sender:this.sender,seq:frame.seq,type:'ack'});
-    const previous=this.queue;
-    const task=previous.catch(()=>{}).then(async()=>{
-      await sleep(this.ackDelayMs);if(!this.open)return;
-      await this.sendAudio(ack);this.event('ack-sent',{seq:frame.seq});
-    });
-    this.queue=task;
+    let task=this.pendingAcks.get(frame.seq);
+    if(!task){
+      const previous=this.queue;
+      task=previous.catch(()=>{}).then(async()=>{
+        if(!this.open)return;
+        await sleep(this.ackDelayMs);if(!this.open)return;
+        await this.sendAudio(ack);if(this.open)this.event('ack-sent',{seq:frame.seq});
+      }).finally(()=>{this.pendingAcks.delete(frame.seq);});
+      this.pendingAcks.set(frame.seq,task);this.queue=task;
+    }
     // Inference overlaps ACK turnaround/playback. The transmit queue still guarantees
     // that the ACK completes before any reply audio begins. Yield one task so a
     // piggyback acknowledgement can finish the previous application send first.
@@ -71,11 +80,11 @@ export class ReliableMorseLink {
       return true;
     }catch(e){this.event('error',{message:e.message});return false;}
   }
-  close(){this.open=false;this.pending?.resolve('closed');this.event('closed');}
+  close(){if(!this.open)return;this.open=false;this.pendingAcks.clear();this.pending?.resolve('closed');this.event('closed');}
 }
 export class MorseAgent {
   constructor({link,generate,goal='短く情報を交換する。',maxTurns=8,maxReplyBytes=180,onEvent=()=>{}}){
-    if(!link||typeof generate!=='function'||!Number.isInteger(maxTurns)||maxTurns<2||maxTurns>32||!Number.isInteger(maxReplyBytes)||maxReplyBytes<32||maxReplyBytes>512)throw new Error('AI会話設定が不正です。');
+    if(!link||typeof generate!=='function'||typeof goal!=='string'||!goal.trim()||goal.length>600||!Number.isInteger(maxTurns)||maxTurns<2||maxTurns>32||!Number.isInteger(maxReplyBytes)||maxReplyBytes<32||maxReplyBytes>512)throw new Error('AI会話設定が不正です。');
     Object.assign(this,{link,generate,goal,maxTurns,maxReplyBytes,onEvent});
     this.history=[];this.active=true;this.busy=false;this.abort=new AbortController();
     link.onData=frame=>this.received(frame);

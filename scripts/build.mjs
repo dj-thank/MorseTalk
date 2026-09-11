@@ -62,3 +62,10 @@ const aiScript=(`globalThis.__FAST_WORKLET_SOURCE__=${JSON.stringify(fastWorklet
 aiHtml=aiHtml.replace('href="index.html"','href="MorseTalk-Portable.html"').replace('<link rel="stylesheet" href="ai.css">',`<style>${aiCss}</style>`).replace('href="icon.svg"',`href="data:image/svg+xml;base64,${icon}"`).replace('__MORSETALK_TOKEN__','').replace('<script type="module" src="js/ai-app.mjs"></script>',`<script>${aiScript}</script>`);
 await fs.writeFile(path.join(root,'dist/MorseTalk-AI-Portable.html'),aiHtml);
 console.log(`Built dist/MorseTalk-AI-Portable.html (${Buffer.byteLength(aiHtml)} bytes).`);
+
+// Preserve readable offline licenses beside the portable entry points.
+await fs.cp(path.join(root,'app/licenses'),path.join(root,'dist/licenses'),{recursive:true});
+const licensePage=(await fs.readFile(path.join(root,'app/licenses.html'),'utf8'))
+  .replace('href="ai.html"','href="MorseTalk-AI-Portable.html"')
+  .replace('<link rel="stylesheet" href="ai.css">',`<style>${aiCss}</style>`);
+await fs.writeFile(path.join(root,'dist/licenses.html'),licensePage);

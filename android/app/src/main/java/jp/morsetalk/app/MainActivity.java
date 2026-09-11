@@ -100,25 +100,32 @@ public final class MainActivity extends Activity {
                 return assetResponse(request);
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                // Navigation is not needed. Also prevent local assets from changing bridge context.
-                return !trustedPage(request.getUrl().toString());
+                // Only allow bundled app and display-only license destinations.
+                String url = request.getUrl().toString();
+                if (!displayPage(url)) return true;
+                if (!trustedPage(url)) {
+                    cancelAI(); cancelRecognition("画面を移動しました。"); stopSpeaking();
+                    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+                return false;
             }
             @Override public void onPageFinished(WebView view, String url) {
-                if (!trustedPage(url)) view.stopLoading();
+                if (!displayPage(url)) view.stopLoading();
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
             @Override public void onPermissionRequest(PermissionRequest request) {
                 ui.post(() -> {
-                    if (!foreground || !trusted(request.getOrigin()) || webPermission != null) { request.deny(); return; }
+                    if (!foreground || web == null || !trustedPage(web.getUrl()) || !trusted(request.getOrigin()) || webPermission != null) { request.deny(); return; }
                     boolean audio = false;
                     for (String resource : request.getResources()) if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) audio = true;
                     if (!audio) { request.deny(); return; }
+                    final String permissionPage = pageBase(web.getUrl());
                     webPermission = request;
                     requestMicrophone(() -> {
                         PermissionRequest pending = webPermission; webPermission = null;
                         if (pending != null) {
-                            if (foreground && hasMicrophone()) pending.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+                            if (foreground && web != null && permissionPage.equals(pageBase(web.getUrl())) && hasMicrophone()) pending.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
                             else pending.deny();
                         }
                     });
@@ -128,6 +135,7 @@ public final class MainActivity extends Activity {
                 if (webPermission == request) webPermission = null;
             }
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (!foreground || !trustedPage(view.getUrl())) { callback.onReceiveValue(null); return true; }
                 if (fileChooser != null) fileChooser.onReceiveValue(null);
                 fileChooser = callback;
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("audio/*");
@@ -149,8 +157,23 @@ public final class MainActivity extends Activity {
         web.loadUrl(ORIGIN + "/ai.html");
     }
 
+    private static String pageBase(String url) {
+        if (url == null) return "";
+        int hash = url.indexOf('#');
+        if (hash >= 0 && url.substring(hash + 1).matches("[A-Za-z][A-Za-z0-9_-]{0,79}")) return url.substring(0, hash);
+        return url;
+    }
+    private static boolean aiPage(String url) { return (ORIGIN + "/ai.html").equals(pageBase(url)); }
     private static boolean trustedPage(String url) {
-        return (ORIGIN + "/index.html").equals(url) || (ORIGIN + "/ai.html").equals(url);
+        return (ORIGIN + "/index.html").equals(pageBase(url)) || aiPage(url);
+    }
+    // License pages can be displayed, but never gain access to the JavaScript bridge.
+    private static boolean displayPage(String url) {
+        url = pageBase(url);
+        return trustedPage(url) || (ORIGIN + "/licenses.html").equals(url) ||
+            (ORIGIN + "/licenses/NOTICE.txt").equals(url) ||
+            (ORIGIN + "/licenses/Apache-2.0.txt").equals(url) ||
+            (ORIGIN + "/licenses/MIT-MorseTalk.txt").equals(url);
     }
     private static boolean trusted(Uri uri) {
         return uri != null && "https".equals(uri.getScheme()) && HOST.equals(uri.getHost()) && (uri.getPort() == -1 || uri.getPort() == 443) && uri.getUserInfo() == null;
@@ -175,6 +198,7 @@ public final class MainActivity extends Activity {
             else if (path.endsWith(".mjs") || path.endsWith(".js")) mime = "text/javascript";
             else if (path.endsWith(".css")) mime = "text/css";
             else if (path.endsWith(".svg")) mime = "image/svg+xml";
+            else if (path.startsWith("/licenses/") && path.endsWith(".txt")) mime = "text/plain";
             else if (path.endsWith(".webmanifest")) mime = "application/manifest+json";
             else return response(404, "text/plain", new byte[0]);
             try (InputStream input = getAssets().open(path.substring(1))) {
@@ -215,7 +239,7 @@ public final class MainActivity extends Activity {
                             reply(id, new JSONObject(), null); break;
                         case "saveFile": saveFile(id, params); break;
                         case "aiChat": {
-                            if (!foreground || !(ORIGIN + "/ai.html").equals(web.getUrl())) throw new IllegalStateException("AI画面を開いてください。");
+                            if (!foreground || !aiPage(web.getUrl())) throw new IllegalStateException("AI画面を開いてください。");
                             if (aiId != null) throw new IllegalStateException("AIが処理中です。");
                             final String requestId = id;
                             LocalGemma.Callback callback = (result, error) -> ui.post(() -> {
@@ -228,9 +252,13 @@ public final class MainActivity extends Activity {
                         case "aiCapabilities":
                             reply(id, new JSONObject().put("native", true).put("provider", "litert")
                                 .put("model", LocalGemma.MODEL).put("endpoint", "").put("remote", false), null); break;
+                        case "openModelGuide":
+                            if (!foreground || !aiPage(web.getUrl()) || aiId != null) throw new IllegalStateException("AI画面で先に処理を停止してください。");
+                            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://developers.google.com/edge/litert-lm/models/gemma-4")));
+                            reply(id, new JSONObject(), null); break;
                         case "localModelStatus": reply(id, localGemma.status(), null); break;
                         case "importModel": {
-                            if (!foreground || !(ORIGIN + "/ai.html").equals(web.getUrl()) || aiId != null || importModelId != null)
+                            if (!foreground || !aiPage(web.getUrl()) || aiId != null || importModelId != null)
                                 throw new IllegalStateException("AI画面で実行中の操作を停止してください。");
                             importModelId = id;
                             Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
@@ -272,11 +300,16 @@ public final class MainActivity extends Activity {
         return language;
     }
     private void reply(String id, JSONObject result, String error) {
-        if (destroyed || web == null) return;
+        // Native callbacks can finish after a navigation. Display-only assets do
+        // not receive responses, even when the original request was authorized.
+        if (destroyed || web == null || !trustedPage(web.getUrl())) return;
+        final String targetPage = pageBase(web.getUrl());
         try {
             JSONObject payload = new JSONObject().put("id", id).put("ok", error == null);
             if (error != null) payload.put("error", error); else payload.put("result", result == null ? new JSONObject() : result);
-            String script = "window.dispatchEvent(new CustomEvent('morsetalk-native-result',{detail:JSON.parse(" + JSONObject.quote(payload.toString()) + ")}));";
+            // evaluateJavascript is asynchronous: recheck the execution page in
+            // JavaScript too, rather than trusting only the earlier UI-thread URL.
+            String script = "if(location.href.split('#')[0]===" + JSONObject.quote(targetPage) + "){window.dispatchEvent(new CustomEvent('morsetalk-native-result',{detail:JSON.parse(" + JSONObject.quote(payload.toString()) + ")}));}";
             web.evaluateJavascript(script, null);
         } catch (JSONException ignored) { }
     }
@@ -414,7 +447,7 @@ public final class MainActivity extends Activity {
             });
         }
     }
-    @Override protected void onResume() { super.onResume(); foreground = true; if (web != null) web.onResume(); }
+    @Override protected void onResume() { super.onResume(); foreground = true; if (web != null) { web.onResume(); if (trustedPage(web.getUrl())) web.evaluateJavascript("window.dispatchEvent(new Event('morsetalk-native-resume'));", null); } }
     @Override protected void onPause() {
         foreground = false;
         cancelAI();
@@ -437,5 +470,8 @@ public final class MainActivity extends Activity {
         if (web != null) { web.removeJavascriptInterface("NativeBridge"); web.destroy(); web = null; }
         super.onDestroy();
     }
-    @Override public void onBackPressed() { moveTaskToBack(true); }
+    @Override public void onBackPressed() {
+        if (web != null && !trustedPage(web.getUrl()) && web.canGoBack()) web.goBack();
+        else moveTaskToBack(true);
+    }
 }

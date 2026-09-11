@@ -1,4 +1,4 @@
-MorseTalk 0.3.0: MIT (MIT-MorseTalk.txt).
+MorseTalk 0.3.1: MIT (MIT-MorseTalk.txt).
 Google AI Edge LiteRT-LM 0.17.0: Apache-2.0.
 https://github.com/google-ai-edge/LiteRT-LM/tree/v0.17.0
 Kotlin standard library / coroutines: JetBrains contributors, Apache-2.0.
