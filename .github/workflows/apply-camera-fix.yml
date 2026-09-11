@@ -1,0 +1,46 @@
+name: Apply complete camera lifecycle patch once
+on:
+  push:
+    paths: ['.github/workflows/apply-camera-fix.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/feat/qr-online'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify complete patch and exact source before applying ordinary files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,os,subprocess,urllib.request
+          from pathlib import Path
+          sha='cb10116ad5de4047eb774508155f3af801b1385e'
+          req=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(req,timeout=30) as r: obj=json.load(r)
+          packed=base64.b64decode(obj['content'])
+          assert len(packed)==3852 and hashlib.sha256(packed).hexdigest()=='d9da574e13691c92fbd41e1b4a1fae8984e56cdfee08f68fc673871382146b8b'
+          dec=lzma.LZMADecompressor(memlimit=64*1024*1024)
+          raw=dec.decompress(packed,max_length=20000)
+          assert dec.eof and not dec.unused_data and len(raw)==10706
+          p=json.loads(raw)
+          allowed={'app/js/pairing-ui.mjs','app/ai.css','android/app/src/androidTest/java/jp/morsetalk/app/SmokeInstrumentation.java'}
+          assert set(p)=={'preimages','patch','new'} and set(p['preimages'])==allowed
+          assert set(p['new'])=={'tests/qr-lifecycle.test.mjs'}
+          for name,sha in p['preimages'].items():
+              assert not Path(name).is_symlink()
+              assert subprocess.check_output(['git','hash-object','--',name],text=True).strip()==sha
+          assert not Path('tests/qr-lifecycle.test.mjs').exists()
+          patch=p['patch'].encode()
+          stat=subprocess.run(['git','apply','--numstat','-'],input=patch,check=True,stdout=subprocess.PIPE).stdout.decode()
+          assert {line.split('\t',2)[2] for line in stat.splitlines()}==allowed
+          subprocess.run(['git','apply','--check','--index','-'],input=patch,check=True)
+          subprocess.run(['git','apply','--index','-'],input=patch,check=True)
+          Path('tests/qr-lifecycle.test.mjs').write_text(p['new']['tests/qr-lifecycle.test.mjs'])
+          subprocess.run(['git','add','tests/qr-lifecycle.test.mjs'],check=True)
+          subprocess.run(['git','-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','Reserve camera layout, release interrupted capture and verify stable Android touch targets across three restarts'],check=True)
+          subprocess.run(['git','push','origin','HEAD:feat/qr-online'],check=True)
+          PY
