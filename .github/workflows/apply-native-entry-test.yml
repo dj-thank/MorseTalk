@@ -1,0 +1,44 @@
+name: Apply native conversation entry verification once
+on:
+  push:
+    paths: ['.github/workflows/apply-native-entry-test.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/feat/natural-conversation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify complete test patch and ordinary-source preimages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,os,re,subprocess,urllib.request
+          from pathlib import Path
+          sha='ec3a199ba962185d50312104d0f502ceb6b888df'
+          req=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(req,timeout=30) as r: packed=base64.b64decode(json.load(r)['content'])
+          assert len(packed)==2532 and hashlib.sha256(packed).hexdigest()=='052abac3d39452241156c1b98be3616ce660907dfe2ccdf18d2edc752ef251ea'
+          dec=lzma.LZMADecompressor(memlimit=128*1024*1024)
+          raw=dec.decompress(packed,max_length=10000)
+          assert dec.eof and not dec.unused_data and len(raw)==6961
+          assert hashlib.sha256(raw).hexdigest()=='231aa5040a1175bbcf0c82658f4367a1a020639216354939567d6de5627e4c5a'
+          allowed={'android/app/src/androidTest/java/jp/morsetalk/app/SmokeInstrumentation.java','tools/test_conversation_ui.py','tools/android_local_gemma.sh','tools/android_smoke.sh'}
+          files={}
+          for block in raw.decode().split('diff --git ')[1:]:
+              m=re.fullmatch(r'a/(\S+) b/(\S+)',block.splitlines()[0]);assert m and m[1]==m[2] and m[1] in allowed
+              name=m[1];assert name not in files
+              for p in (Path(name),*Path(name).parents):assert not p.is_symlink()
+              idx=re.search(r'^index ([0-9a-f]{40})\.\.([0-9a-f]{40})',block,re.M);assert idx
+              assert subprocess.check_output(['git','hash-object','--',name],text=True).strip()==idx[1],name
+              files[name]=idx[2]
+          assert set(files)==allowed
+          subprocess.run(['git','apply','--unidiff-zero','--check','--index','-'],input=raw,check=True)
+          subprocess.run(['git','apply','--unidiff-zero','--index','-'],input=raw,check=True)
+          for name,sha in files.items():assert subprocess.check_output(['git','hash-object','--',name],text=True).strip()==sha,name
+          subprocess.run(['git','-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','Wait for real native UI readiness, tap the new conversation entry and preserve failure diagnostics'],check=True)
+          subprocess.run(['git','push','origin','HEAD:feat/natural-conversation'],check=True)
+          PY
