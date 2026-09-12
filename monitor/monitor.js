@@ -138,11 +138,13 @@ function updateText(role,text){
 }
 /* ---------- E2B readings ---------- */
 let hub=null,e2bId=0;const e2bCache=new Map();
+let e2bOffUntil=0;
 function askE2B(role,text){
   const l=lanes[role];clearTimeout(l.e2bTimer);
   if(!text.trim())return;
   const cached=e2bCache.get(text);if(cached){applyE2B(role,cached);return;}
-  l.e2bTimer=setTimeout(()=>{if(hub?.readyState===1&&e2bState!=='off'){const id=++e2bId;e2bPending.set(id,{role,text});hub.send(JSON.stringify({kind:'e2b',id,text}));}},120);
+  if(l.e2bBusy){l.e2bWanted=text;return;}
+  l.e2bTimer=setTimeout(()=>{if(hub?.readyState===1&&Date.now()>e2bOffUntil){const id=++e2bId;l.e2bBusy=true;l.e2bWanted=null;e2bPending.set(id,{role,text});hub.send(JSON.stringify({kind:'e2b',id,text}));}},120);
 }
 const e2bPending=new Map();let e2bState='unknown';
 function applyE2B(role,r){
@@ -154,7 +156,8 @@ function applyE2B(role,r){
 }
 function onE2B(m){
   const p=e2bPending.get(m.id);e2bPending.delete(m.id);
-  if(m.error){e2bState='off';chip('chip-e2b','err','E2B 未接続');return;}
+  if(p){const l=lanes[p.role];l.e2bBusy=false;if(l.e2bWanted&&l.e2bWanted!==m.text){const want=l.e2bWanted;l.e2bWanted=null;setTimeout(()=>askE2B(p.role,want),0);}}
+  if(m.error){e2bState='off';e2bOffUntil=Date.now()+8000;chip('chip-e2b','err',`E2B 応答なし (${m.error})`);return;}
   e2bState='on';chip('chip-e2b','on',`E2B ${m.latencyMs} ms`);$('m-e2b').textContent=`${m.latencyMs} ms`;
   e2bCache.set(m.text,m);if(e2bCache.size>200)e2bCache.delete(e2bCache.keys().next().value);
   if(p)applyE2B(p.role,m);
@@ -234,7 +237,7 @@ function handle(ev,live=true){
     case 'feed-open':case 'feed-close':chip('chip-hub','on',`監視サーバー · feed ${ev.feeds}`);return;
     case 'hello':chip(role?'chip-b':'chip-a','on',`端末${role?'B':'A'} 接続`);return;
     case 'session':chip(role?'chip-b':'chip-a','on',`端末${role?'B':'A'} · ${ev.wpm} WPM`);setMeta(role,ev);log('sys','',`端末${role?'B':'A'}: ${ev.transport==='online'?'USB/オンライン':'音響'} · ${ev.wpm} WPM · ${ev.mode==='ai'?'Gemma自動応答':'手入力'} · 通信コード ${ev.room}`);if(live){resetLane(role);setDir(role,'rx','受信待機');}return;
-    case 'status':el(role,'lamp-label').textContent=ev.text;$('foot-status').textContent=`${role?'B':'A'}: ${ev.text}`;return;
+    case 'status':if(live)enqueue(role,()=>{el(role,'lamp-label').textContent=ev.text;$('foot-status').textContent=`${role?'B':'A'}: ${ev.text}`;});return;
     case 'level':return;
     case 'mark':if(live)handleMark(role,ev);return;
     case 'letter':if(live){if(l.dir!=='rx')setDir(role,'rx','受信中');handleLetter(role,ev);}return;
