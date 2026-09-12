@@ -256,7 +256,7 @@ function handle(ev,live=true){
     case 'timeout':metrics.retry++;bump();log('sys','',`端末${role?'B':'A'}: 受信確認なし → ${ev.attempt?'再送も失敗':'再送'}`);return;
     case 'duplicate':log('sys','',`端末${role?'B':'A'}: 重複受信を抑制 (ターン ${ev.seq})`);return;
     case 'invalid':case 'error':if(live){el(role,'crc').innerHTML=`<span class="pill bad">${ev.message||'受信診断'}</span>`;}log('sys','',`端末${role?'B':'A'}: ${ev.message||ev.kind}`);return;
-    case 'stopped':log('sys','',`端末${role?'B':'A'} 停止: ${ev.message||''}`);if(live){setDir(role,'idle','停止');chip(role?'chip-b':'chip-a','warn',`端末${role?'B':'A'} 停止`);}return;
+    case 'stopped':if(live)enqueue(role,()=>{log('sys','',`端末${role?'B':'A'} 停止: ${ev.message||''}`);setDir(role,'idle','停止');chip(role?'chip-b':'chip-a','warn',`端末${role?'B':'A'} 停止`);});else log('sys','',`端末${role?'B':'A'} 停止: ${ev.message||''}`);return;
     case 'e2b-result':onE2B(ev);return;
     default:return;
   }
