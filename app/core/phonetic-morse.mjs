@@ -51,12 +51,14 @@ export function phoneticPcm(wire,{wpm=60,sampleRate=48000,frequency=700,volume=.
   return {pcm,sampleRate,segments,code,seconds:pcm.length/sampleRate};
 }
 export class PhoneticDecoder {
-  constructor({language='ja',wpm=60,frequency=700,threshold=.012,adaptive=false,detection={},onHeader=()=>{},onLevel=()=>{},onFrame=()=>{},onCharacter=()=>{},onMark=()=>{},onError=()=>{}}={}){
+  constructor({language='ja',wpm=60,frequency=700,threshold=.012,adaptive=false,detection={},onSymbols=()=>{},onHeader=()=>{},onLevel=()=>{},onFrame=()=>{},onCharacter=()=>{},onMark=()=>{},onError=()=>{}}={}){
     this.language=language;
     const framed=text=>adaptive?(text.match(/([AB]\d{1,5}[=+](?: |$).*)/)?.[1]||text):text;
     this.detector=new ToneDetector({...detection,wpm,frequency,sampleRate:48000,experimental:true,threshold,adaptive,onLevel,
       onMessage:m=>{try{if(m.invalid&&!adaptive)throw Error('モールス符号が不正です。');onFrame(unpackPhonetic(framed(m.text),language));}catch(e){onError(e.message,{rawText:m.text,rawCode:m.code});}},
       onUpdate:code=>{
+        const raw=decodeCode(code,'international',{strict:false});
+        onSymbols({text:raw.text,code,unknown:raw.unknown});
         const complete=framed(decodeCode(code,'international',{strict:false}).text);
         const header=/^([AB])(\d{1,5})([=+])/.exec(complete);
         if(header){const stage=complete.includes(' /')?'checksum':'body',key=header[0]+stage;if(this.lastHeader!==key){this.lastHeader=key;onHeader({sender:header[1]==='B'?1:0,seq:Number(header[2]),type:header[3]==='+'?'ack':'data',stage});}}

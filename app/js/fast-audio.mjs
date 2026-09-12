@@ -34,7 +34,7 @@ export class FastAudio {
     }catch(e){if(generation===this.generation)this.stop();throw e;}
     finally{if(url?.startsWith('blob:'))URL.revokeObjectURL(url);}
   }
-  async transmit(bytes){
+  async transmit(bytes,onPlayback){
     if(this.closed||!this.node)throw new Error('先に受信待機を開始してください。');
     if(this.job)throw new Error('音声送信が重複しました。');
     const generation=this.generation,ctx=this.ctx;
@@ -53,7 +53,7 @@ export class FastAudio {
       };
       this.job={source,finish};
       source.onended=()=>{timer=setTimeout(()=>finish(),80);};
-      try{source.start(ctx.currentTime+.025);}catch(e){finish(e);}
+      try{const startAt=ctx.currentTime+.025;source.start(startAt);onPlayback?.({ctx,startAt});}catch(e){finish(e);}
     });
     if(this.closed||generation!==this.generation)throw new Error('送信を停止しました。');
   }

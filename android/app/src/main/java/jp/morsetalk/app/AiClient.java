@@ -51,7 +51,9 @@ final class AiClient {
         if (provider.equals("compatible") && params.optBoolean("structuredDiscussion",false)) {
             JSONObject properties=new JSONObject();
             for(String key:new String[]{"understanding","focus","reply"}) properties.put(key,new JSONObject().put("type","string"));
-            properties.getJSONObject("reply").put("maxLength",12);
+            // Leave room to finish a natural Japanese sentence; the prompt
+            // still asks for one short point per acoustic turn.
+            properties.getJSONObject("reply").put("maxLength",24);
             JSONObject schema=new JSONObject().put("type","object").put("properties",properties).put("required",new JSONArray().put("understanding").put("focus").put("reply")).put("additionalProperties",false);
             request.put("response_format",new JSONObject().put("type","json_schema").put("json_schema",new JSONObject().put("name","discussion").put("strict",true).put("schema",schema)));
         }

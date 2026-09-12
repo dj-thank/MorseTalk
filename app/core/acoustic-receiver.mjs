@@ -15,6 +15,7 @@ export class AcousticReceiver {
       {windowMs:10,peakRatio:.04,purityGate:0,releaseBlocks:1,threshold:.004},
     ];
     this.decoders=profiles.map((profile,index)=>new PhoneticDecoder({...options,adaptive:true,threshold:profile.threshold,detection:profile,
+      onSymbols:index===0?options.onSymbols:()=>{},
       onHeader:header=>{const messageKey=`${header.sender}:${header.seq}:${header.type}`,choice=this.progressProfiles.get(messageKey);if(header.stage==='body'&&(!choice||this.samples-choice.at>96000)){this.progressProfiles.set(messageKey,{index,at:this.samples});while(this.progressProfiles.size>64)this.progressProfiles.delete(this.progressProfiles.keys().next().value);}const key=JSON.stringify(header);if(this.headerKey!==key){this.headerKey=key;options.onHeader?.(header);}},
       onCharacter:character=>{const key=`${character.sender}:${character.seq}:${character.type}`;if(this.progressProfiles.get(key)?.index===index)options.onCharacter?.(character);},
       onMark:index===0?options.onMark:()=>{},onLevel:index===0?options.onLevel:()=>{},onError:index===0?(message,observed)=>options.onError?.(message,{...observed,candidate:true,decoderProfile:index}):()=>{},
