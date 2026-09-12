@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+- New "Signal Deck" visual design: dark operator console, amber lamp accent, monospace metrics, larger touch targets.
+- New app icon and Android status/navigation bar theme matching the design.
+- Hero copy now covers human and AI conversations equally.
+
 ## 0.5.0
 - Add ten editable conversation topics and four complementary A/B conversation styles.
 - Add a visible single-device real-model / numeric-PCM trial entry point.
