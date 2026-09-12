@@ -175,7 +175,9 @@ function setMeta(role,meta){
   $('air-meta').textContent=`${meta.wpm} WPM · unit ${Math.round(strip.unitMs*10)/10} ms · ${meta.mode==='ai'?'Gemma自動応答':'手入力'}`;
 }
 /* ---------- synthetic replay of a known wire (TX side, or online RX without audio) ---------- */
-function runWire(role,wire,dir,label,done){
+const laneQueue=[Promise.resolve(),Promise.resolve()];
+function enqueue(role,fn){const run=laneQueue[role].catch(()=>{}).then(fn);laneQueue[role]=run;return run;}
+function runWire(role,wire,dir,label,done){return new Promise(resolve=>{
   const l=lanes[role];if(l.anim){clearTimeout(l.anim);l.anim=null;}
   resetLane(role);setDir(role,dir,label);
   const wpm=l.meta?.wpm||60,unit=1200/wpm;const segments=fastSegments(wire,{wpm});
@@ -195,10 +197,10 @@ function runWire(role,wire,dir,label,done){
       i++;
     }
     if(i<steps.length)l.anim=setTimeout(tick,8);
-    else{l.anim=null;handleLetter(role,{end:true,valid:true});done?.();}
+    else{l.anim=null;handleLetter(role,{end:true,valid:true});done?.();resolve();}
   };
   l.anim=setTimeout(tick,30);
-}
+});}
 /* ---------- decoder events ---------- */
 function handleLetter(role,e){
   const l=lanes[role];
@@ -236,19 +238,21 @@ function handle(ev,live=true){
     case 'level':return;
     case 'mark':if(live)handleMark(role,ev);return;
     case 'letter':if(live){if(l.dir!=='rx')setDir(role,'rx','受信中');handleLetter(role,ev);}return;
-    case 'rx-wire':if(live){const wire=ev.morse.split(' ').map(m=>MORSE_REVERSE.get(m)||'?').join('');runWire(role,wire,'rx','受信（暗号化経路を再生）');}return;
-    case 'frame':{const f=ev.frame;if(f.type==='ack'){if(live){el(role,'crc').innerHTML='<span class="pill ok">CRC32 一致</span><span class="pill ack">ACK 受信</span>';}return;}
-      metrics.turns=Math.max(metrics.turns,f.seq);bump();log(f.sender?'b':'a',`端末${f.sender?'B':'A'} → 端末${role?'B':'A'} · ターン ${f.seq}`,f.text);
-      if(live){const finish=()=>{updateText(role,f.text);el(role,'crc').innerHTML='<span class="pill ok">CRC32 一致 · 本文確定</span>';setDir(role,'rx','受信完了');};if(l.anim){const prev=l.anim;const wait=()=>{if(l.anim)setTimeout(wait,50);else finish();};wait();}else finish();}
+    case 'rx-wire':if(live){const wire=ev.morse.split(' ').map(m=>MORSE_REVERSE.get(m)||'?').join('');enqueue(role,()=>runWire(role,wire,'rx','受信（暗号化経路を再生）'));}return;
+    case 'frame':{const f=ev.frame;if(f.type==='ack'){if(live)enqueue(role,()=>{el(role,'crc').innerHTML='<span class="pill ok">CRC32 一致</span><span class="pill ack">ACK 受信</span>';});return;}
+      metrics.turns=Math.max(metrics.turns,f.seq);bump();
+      const finish=()=>{log(f.sender?'b':'a',`端末${f.sender?'B':'A'} → 端末${role?'B':'A'} · ターン ${f.seq}`,f.text);updateText(role,f.text);el(role,'crc').innerHTML='<span class="pill ok">CRC32 一致 · 本文確定</span>';setDir(role,'rx','受信完了');};
+      if(live)enqueue(role,()=>{finish();return new Promise(r=>setTimeout(r,700));});else log(f.sender?'b':'a',`端末${f.sender?'B':'A'} → 端末${role?'B':'A'} · ターン ${f.seq}`,f.text);
       return;}
-    case 'tx':{if(ev.type==='ack'){if(live){el(role,'crc').innerHTML='<span class="pill ack">ACK 送信</span>';}return;}
+    case 'tx':{if(ev.type==='ack'){if(live)enqueue(role,()=>{el(role,'crc').innerHTML='<span class="pill ack">ACK 送信</span>';});return;}
       const key=`${role}:${ev.seq}:${ev.text}`;const retry=seenTx.has(key);seenTx.set(key,performance.now());l.txAt=performance.now();
-      if(!retry){metrics.turns=Math.max(metrics.turns,ev.seq);log(role?'b':'a',`端末${role?'B':'A'} 送信 · ターン ${ev.seq} · ${ev.bytes?.length||''}B`,ev.text);}
-      if(live){runWire(role,ev.wire,'tx',retry?'再送中':'送信中',()=>{updateText(role,ev.text);el(role,'crc').innerHTML='<span class="pill ok">送信完了 · ACK待ち</span>';});
-        const raw=new TextEncoder().encode(ev.text).length;$('m-comp').textContent=ev.bytes?`${raw}B → ${ev.bytes.length-20}B`:'—';}
+      if(!retry)metrics.turns=Math.max(metrics.turns,ev.seq);
+      const logTx=()=>{if(!retry)log(role?'b':'a',`端末${role?'B':'A'} 送信 · ターン ${ev.seq} · ${ev.bytes?.length||''}B`,ev.text);};
+      if(live){enqueue(role,()=>{logTx();const raw=new TextEncoder().encode(ev.text).length;$('m-comp').textContent=ev.bytes?`${raw}B → ${ev.bytes.length-20}B`:'—';return runWire(role,ev.wire,'tx',retry?'再送中':'送信中',()=>{updateText(role,ev.text);el(role,'crc').innerHTML='<span class="pill ok">送信完了 · ACK待ち</span>';}).then(()=>new Promise(r=>setTimeout(r,500)));});}
+      else logTx();
       return;}
     case 'generated':log('sys','',`端末${role?'B':'A'} の Gemma が生成 (${(ev.inferenceMs/1000).toFixed(1)} s): ${ev.text}`);return;
-    case 'delivered':{const rtt=l.txAt?Math.round(performance.now()-l.txAt):null;if(live){el(role,'crc').innerHTML=`<span class="pill ok">相手が受信確認 (ACK)</span>${rtt?`<span class="pill">${rtt} ms</span>`:''}`;setDir(role,'idle','待機');}if(rtt)$('m-ack').textContent=`${rtt} ms`;return;}
+    case 'delivered':{const rtt=l.txAt?Math.round(performance.now()-l.txAt):null;if(live)enqueue(role,()=>{el(role,'crc').innerHTML=`<span class="pill ok">相手が受信確認 (ACK)</span>${rtt?`<span class="pill">${rtt} ms</span>`:''}`;setDir(role,'idle','待機');});if(rtt)$('m-ack').textContent=`${rtt} ms`;return;}
     case 'timeout':metrics.retry++;bump();log('sys','',`端末${role?'B':'A'}: 受信確認なし → ${ev.attempt?'再送も失敗':'再送'}`);return;
     case 'duplicate':log('sys','',`端末${role?'B':'A'}: 重複受信を抑制 (ターン ${ev.seq})`);return;
     case 'invalid':case 'error':if(live){el(role,'crc').innerHTML=`<span class="pill bad">${ev.message||'受信診断'}</span>`;}log('sys','',`端末${role?'B':'A'}: ${ev.message||ev.kind}`);return;
@@ -288,4 +292,4 @@ async function demo(){
   demoRunning=false;$('demo').disabled=false;
 }
 $('demo').addEventListener('click',demo);
-$('clear').addEventListener('click',()=>{for(const r of [0,1]){resetLane(r);setDir(r,'idle','待機');}$('log').innerHTML='<p class="empty">表示を消去しました。</p>';strip.blocks=[];metrics.events=0;metrics.retry=0;metrics.bytes=0;metrics.turns=0;bump();});
+$('clear').addEventListener('click',()=>{for(const r of [0,1]){if(lanes[r].anim){clearTimeout(lanes[r].anim);lanes[r].anim=null;}laneQueue[r]=Promise.resolve();resetLane(r);setDir(r,'idle','待機');}$('log').innerHTML='<p class="empty">表示を消去しました。</p>';strip.blocks=[];metrics.events=0;metrics.retry=0;metrics.bytes=0;metrics.turns=0;bump();});
