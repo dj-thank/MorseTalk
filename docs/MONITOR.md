@@ -38,7 +38,7 @@
    set MORSETALK_AI_URL=http://127.0.0.1:1234/v1/chat/completions
    set MORSETALK_AI_MODEL=gemma-4-e2b-it
    py -3 -X utf8 server.py --ai --no-browser --port 8765
-   py -3 -X utf8 tools/pc_android.py --serial <どれか1台>   （127.0.0.1:8787 の中継だけを使います）
+   set PORT=8787 && py -3 -X utf8 relay/server.py   （携帯がつながっていれば tools/pc_android.py の中継でも同じ）
    py -3 -X utf8 tools/pc_pair_demo.py --turns 24 --speed 600 --preset daily
    ```
    `tools/monitor_record.py` は監視画面をヘッドレス Chromium で録画（WebM）し、静止画も保存します。
