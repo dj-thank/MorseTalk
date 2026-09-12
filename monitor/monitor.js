@@ -111,10 +111,10 @@ function addMark(role,units,on){
 }
 function renderLetters(role){
   const l=lanes[role],box=el(role,'letters'),bytesBox=el(role,'bytes'),dec=decodePrefix(l.letters.slice(2));
-  box.innerHTML='';const total=dec.total;
-  [...l.letters].forEach((c,i)=>{const s=document.createElement('span');const byteIndex=Math.floor((i-2)*5/8);
+  box.innerHTML='';const total=dec.total;const first=Math.max(0,l.letters.length-56);
+  [...l.letters].forEach((c,i)=>{if(i<first)return;const s=document.createElement('span');const byteIndex=Math.floor((i-2)*5/8);
     s.className='l '+(i<2?'pre':!total?(byteIndex<16?'hdr':'pay'):byteIndex<16?'hdr':byteIndex>=total-4?'crc':'pay');if(i===l.letters.length-1)s.classList.add('cur');s.textContent=c;box.append(s);});
-  bytesBox.innerHTML='';dec.bytes.forEach((b,i)=>{const s=document.createElement('span');s.className='b '+(i<16?'hdr':total&&i>=total-4?'crc':'pay');s.textContent=hex(b);bytesBox.append(s);});
+  bytesBox.innerHTML='';const firstByte=Math.max(0,dec.bytes.length-44);dec.bytes.forEach((b,i)=>{if(i<firstByte)return;const s=document.createElement('span');s.className='b '+(i<16?'hdr':total&&i>=total-4?'crc':'pay');s.textContent=hex(b);bytesBox.append(s);});
   const h=dec.header,hb=el(role,'header');
   if(h){hb.innerHTML=`<span>magic <b>${h.magic}</b></span><span>${h.ack?'<b>ACK</b>':'DATA'}</span><span>通信コード <b>${h.room}</b></span><span>セッション <b>${h.session}</b></span><span>端末 <b>${h.sender?'B':'A'}</b></span><span>連番 <b>${h.seq}</b></span><span>本文 <b>${h.len}</b>B${h.packed?` → 展開 <b>${h.raw}</b>B (LZ)`:''}</span><span>受信 <b>${dec.bytes.length}</b>/${dec.total}B</span>`;setStep(dec.bytes.length>16?'text':'header');}
   else{hb.innerHTML=`<span>ヘッダー待ち <b>${dec.bytes.length}</b>/16 B</span>`;setStep(dec.bytes.length?'byte':'letter');}
