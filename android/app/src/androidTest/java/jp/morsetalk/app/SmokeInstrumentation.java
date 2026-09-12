@@ -43,7 +43,7 @@ public final class SmokeInstrumentation extends Instrumentation {
             require("document.documentElement.scrollWidth<=innerWidth","Horizontal overflow");
             check("Emulator WebView layout fits viewport",true);
             js("document.querySelector('#self-test').click();true");
-            waitJs("document.querySelector('#diagnostic').textContent.includes('4速度すべてPCM復元一致')",20000);
+            waitJs("document.querySelector('#diagnostic').textContent.includes('5速度すべてPCM復元一致')",20000);
             check("Four-speed production codec self-test in Android WebView",js("document.querySelector('#diagnostic').textContent"));
             js("window.workletProbe=null;(async()=>{let c;try{c=new AudioContext();await c.audioWorklet.addModule('/js/fast-worklet.mjs');const n=new AudioWorkletNode(c,'morsetalk-fast-input',{processorOptions:{wpm:1200}});n.port.postMessage({kind:'stop'});n.disconnect();window.workletProbe='ok';}catch(e){window.workletProbe=String(e);}finally{if(c)await c.close();}})();true");
             waitJs("window.workletProbe!==null",20000);

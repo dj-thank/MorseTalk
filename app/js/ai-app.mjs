@@ -130,7 +130,7 @@ async function selfTest(){
   }
   let comparison='';try{const old=prepareMessage({text,room:opts.room,id:20260911,mode:'packet',wpm:40});comparison=` / 旧MT1・40 WPM: ${old.seconds.toFixed(3)}秒`;}catch{}
   $('diagnostic').textContent=`${Object.values(FAST_PROFILES).length}速度すべてPCM復元一致。${rows.join(' / ')}${comparison}。これは生成音の長さです。実機通信・AI推論・ACKの時間は含みません。`;
-  entry('通信自己診断 · AIなし',`「${text}」を4速度のPCMから復元。AIは呼び出していません。`);
+  entry('通信自己診断 · AIなし',`「${text}」を${Object.values(FAST_PROFILES).length}速度のPCMから復元。AIは呼び出していません。`);
   status('通信自己診断に成功。実機の受信待機・AI推論は開始していません。');
   $('airtime').textContent=`${fastDuration(b,opts).toFixed(3)} s`;
 }
