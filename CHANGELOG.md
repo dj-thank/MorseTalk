@@ -1,6 +1,8 @@
 # Changelog
 
 ## 0.6.0
+- Add a 60 WPM "over the air" MT2 speed for real phone speaker/microphone links (120 WPM units are 10 ms and did not decode between two physical Pixels).
+- Add tools/phone_pair.py to drive two USB/Wi-Fi ADB phones through the local relay.
 - New "Signal Deck" visual design: dark operator console, amber lamp accent, monospace metrics, larger touch targets.
 - New app icon and Android status/navigation bar theme matching the design.
 - Hero copy now covers human and AI conversations equally.

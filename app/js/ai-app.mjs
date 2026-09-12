@@ -1,4 +1,4 @@
-import { packFastFrame, unpackFastFrame, fastPcm, fastDuration, FastMorseDecoder } from '../core/fast-codec.mjs';
+import { packFastFrame, unpackFastFrame, fastPcm, fastDuration, FastMorseDecoder, FAST_PROFILES } from '../core/fast-codec.mjs';
 import { prepareMessage } from '../core/packet.mjs';
 import { pcmToWav } from '../core/morse.mjs';
 import { ReliableMorseLink, MorseAgent } from '../core/fast-link.mjs';
@@ -34,7 +34,7 @@ function options(){
   const session=parseInt(sessionText,16),sender=Number($('role').value),wpm=Number($('speed').value),volume=Number($('volume').value),maxTurns=Number($('turns').value),maxReplyBytes=Number($('max-bytes').value);
   packFastFrame({room,session,sender,seq:1,text:'test'});
   if(!Number.isInteger(maxTurns)||maxTurns<2||maxTurns>32||!Number.isInteger(maxReplyBytes)||maxReplyBytes<32||maxReplyBytes>512)throw new Error('会話制限の数値を確認してください。');
-  if(![120,300,600,1200].includes(wpm)||!Number.isFinite(volume)||volume<.03||volume>.35)throw new Error('速度・音量の設定が不正です。');
+  if(!Object.values(FAST_PROFILES).includes(wpm)||!Number.isFinite(volume)||volume<.03||volume>.35)throw new Error('速度・音量の設定が不正です。');
   return {room,session,sender,wpm,volume,maxTurns,maxReplyBytes,frequency:4000,goal:$('goal').value,style:conversationUI?.style()||'natural',shareTopic:true};
 }
 function aiOptions(){
@@ -118,11 +118,11 @@ function pcmChannel(bytes,opts){
 }
 async function selfTest(){
   const opts=options(),text=$('sample-text').value,b=packFastFrame({...opts,seq:1,text});
-  const rows=[];for(const wpm of [120,300,600,1200]){
+  const rows=[];for(const wpm of Object.values(FAST_PROFILES)){
     const {frame,seconds}=pcmChannel(b,{...opts,wpm});if(frame.text!==text)throw new Error('本文が一致しません。');rows.push(`${wpm} WPM: ${seconds.toFixed(3)}秒`);
   }
   let comparison='';try{const old=prepareMessage({text,room:opts.room,id:20260911,mode:'packet',wpm:40});comparison=` / 旧MT1・40 WPM: ${old.seconds.toFixed(3)}秒`;}catch{}
-  $('diagnostic').textContent=`4速度すべてPCM復元一致。${rows.join(' / ')}${comparison}。これは生成音の長さです。実機通信・AI推論・ACKの時間は含みません。`;
+  $('diagnostic').textContent=`${Object.values(FAST_PROFILES).length}速度すべてPCM復元一致。${rows.join(' / ')}${comparison}。これは生成音の長さです。実機通信・AI推論・ACKの時間は含みません。`;
   entry('通信自己診断 · AIなし',`「${text}」を4速度のPCMから復元。AIは呼び出していません。`);
   status('通信自己診断に成功。実機の受信待機・AI推論は開始していません。');
   $('airtime').textContent=`${fastDuration(b,opts).toFixed(3)} s`;

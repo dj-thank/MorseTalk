@@ -6,7 +6,7 @@ import { utf8Encode, utf8Decode } from './utf8.mjs';
 import { INTERNATIONAL } from './morse.mjs';
 import { crc32, base32Encode, parseRoom } from './packet.mjs';
 export const FAST_VERSION = '0.2.1';
-export const FAST_PROFILES = Object.freeze({ cautious:120, balanced:300, fast:600, laboratory:1200 });
+export const FAST_PROFILES = Object.freeze({ air:60, cautious:120, balanced:300, fast:600, laboratory:1200 });
 export const MAX_FAST_BYTES = 512;
 const enc={encode:utf8Encode}, dec={decode:utf8Decode};
 const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -92,7 +92,7 @@ export function parseFastWire(wire){
   return unpackFastFrame(bytes);
 }
 export function fastTiming({wpm=300,frequency=4000,sampleRate=48000,volume=.18}={}){
-  if(!Object.values(FAST_PROFILES).includes(wpm))throw new Error('MT2速度は120 / 300 / 600 / 1200 WPMです。');
+  if(!Object.values(FAST_PROFILES).includes(wpm))throw new Error('MT2速度は60 / 120 / 300 / 600 / 1200 WPMです。');
   integer(sampleRate,16000,96000,'サンプルレート');
   if(!Number.isFinite(frequency)||frequency<2500||frequency>5000||frequency>=sampleRate/2)throw new Error('MT2搬送波は2500〜5000 Hzです。');
   if(!Number.isFinite(volume)||volume<0||volume>.5)throw new Error('MT2音量は0〜0.5です。');
