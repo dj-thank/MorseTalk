@@ -28,7 +28,7 @@ async def run(url,out,language,topic):
         received=next(e for e in frames if e['frame']['seq']==sent['seq'])
         assert received['role']==1-sent['role'] and received['frame']['text']==sent['text']
         marks=[e for e in events if e.get('kind')=='mark' and e.get('signalSeq')==sent['seq'] and e.get('signalType')=='data' and e.get('on')]
-        chars=[e for e in events if e.get('kind')=='phonetic-character' and e.get('seq')==sent['seq']]
+        chars=[e for e in events if e.get('kind')=='phonetic-character' and e.get('seq')==sent['seq'] and e.get('type','data')=='data']
         assert marks and all(e.get('signalSender')==sent['role'] and e.get('role')==1-sent['role'] for e in marks)
         assert chars and all(e.get('sender')==sent['role'] and e.get('role')==1-sent['role'] for e in chars)
     inputs=[e for e in events if e.get('kind')=='inference-input']

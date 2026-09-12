@@ -15,10 +15,12 @@ export function messageCells(wire,{language='ja',final=false,boundary=false}={})
 export class InlineMessage {
   constructor(element,{delay=105}={}){this.element=element;this.delay=delay;this.epoch=0;this.cells=[];this.reset();}
   reset(){
+    this.placeholderNode=null;this.element.classList.remove('waiting');
     this.epoch++;for(const cell of this.cells){clearTimeout(cell.timer);clearTimeout(cell.finish);}
     this.cells=[];this.formattedWire=null;this.caret=document.createElement('span');this.caret.className='caret';this.element.replaceChildren(this.caret);this.element.dataset.wire='';this.element.dataset.kana='';this.element.removeAttribute('title');this.element.classList.remove('kanji-formatted','receive-error');
   }
   update(wire,{language='ja',final=false,boundary=false,animate=true}={}){
+    this.placeholderNode?.remove();this.placeholderNode=null;this.element.classList.remove('waiting');
     if(wire===this.formattedWire)return;
     const specs=messageCells(wire,{language,final,boundary});
     if(specs.length<this.cells.length)this.reset();
@@ -46,5 +48,6 @@ export class InlineMessage {
     this.element.dataset.kana=this.element.textContent;this.element.title=`受信したかな: ${this.element.textContent}`;
     this.formattedWire=wire;this.element.textContent=text;this.element.classList.add('kanji-formatted');return true;
   }
+  waiting(text='返答を待っています'){this.reset();this.caret.hidden=true;this.placeholderNode=document.createElement('span');this.placeholderNode.textContent=text;this.caret.before(this.placeholderNode);this.element.classList.add('waiting');}
   plain(text){this.reset();this.update(text,{language:'en',final:true,animate:false});this.element.classList.remove('english');}
 }

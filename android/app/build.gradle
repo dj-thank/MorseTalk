@@ -9,8 +9,13 @@ android {
         minSdk 26
         targetSdk 35
         testInstrumentationRunner 'jp.morsetalk.app.SmokeInstrumentation'
-        versionCode 11
-        versionName '0.6.1'
+        versionCode 12
+        versionName '0.6.2'
+        if (project.hasProperty('targetAbi')) {
+            def selectedAbi=project.property('targetAbi').toString()
+            if (!(selectedAbi in ['arm64-v8a','x86_64'])) throw new GradleException('Unsupported targetAbi')
+            ndk { abiFilters selectedAbi }
+        }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

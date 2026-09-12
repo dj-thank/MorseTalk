@@ -65,6 +65,7 @@ if(isMainThread){
 }else{
   const c=workerData,role=c.role,language=c.language||'ja',opts={wpm:c.wpm,frequency:700,sampleRate:48000,volume:.24};
   const room='0000',session=c.session;let id=0;const pending=new Map(),prepared=new Map(),replyReadings=new Map();
+  const ackPayload=language==='ja'?kanaToWire('じゅしんしました'):{wire:'RECEIVED',text:'RECEIVED'};
   const emit=e=>{if(e.kind==='delivered')prepared.delete('data:'+e.seq);parentPort.postMessage({...e,worker:threadId});};let incomingSignal=null;
   async function model(messages,signal,purpose='conversation',schema){
     const body={model:c.model,messages,stream:false,max_tokens:purpose==='conversation'?384:256,temperature:purpose==='conversation'?.4:0};
@@ -77,7 +78,7 @@ if(isMainThread){
     emit({kind:'model-reply',purpose,model:result.model||c.model,usage:result.usage});return text.trim();
   }
   async function payloadFor(frame){
-    if(frame.type==='ack')return {wire:'',text:''};
+    if(frame.type==='ack')return ackPayload;
     const text=frame.text.replace(/^話題[：:]\s*/, '');
     if(replyReadings.has(text))return replyReadings.get(text);
     if(language==='en')return {wire:text.toUpperCase().replace(/!/g,'.'),text:text.toUpperCase().replace(/!/g,'.')};
@@ -87,34 +88,34 @@ if(isMainThread){
     const match=raw.match(/\{[\s\S]*\}/);if(!match)throw Error('読みを取得できませんでした。');
     return kanaToWire(JSON.parse(match[0]).reading);
   }
-  const ack=phoneticPcm(packPhonetic({sender:role,seq:1,type:'ack'}),opts);
-  const link=new ReliableMorseLink({room,session,sender:role,ackDelayMs:160,ackTimeoutMs:Math.ceil(ack.seconds*1000+2500),onEvent:emit,
+  const ack=phoneticPcm(packPhonetic({sender:role,seq:1,type:'ack',wire:ackPayload.wire}),opts);
+  const link=new ReliableMorseLink({room,session,sender:role,ackDelayMs:160,ackTimeoutMs:Math.ceil(ack.seconds*1000+12000),onEvent:emit,
     sendAudio:async bytes=>{
       const frame=unpackFastFrame(bytes),key=frame.type+':'+frame.seq;
       if(frame.type!=='ack'&&!prepared.has(key))prepared.set(key,await payloadFor(frame));
-      const payload=frame.type==='ack'?{wire:'',text:''}:prepared.get(key),wire=packPhonetic({...frame,wire:payload.wire}),{pcm}=phoneticPcm(wire,opts);
+      const payload=frame.type==='ack'?ackPayload:prepared.get(key),wire=packPhonetic({...frame,wire:payload.wire}),{pcm}=phoneticPcm(wire,opts);
       return new Promise((resolve,reject)=>{const request=++id;pending.set(request,{resolve,reject});parentPort.postMessage({kind:'play',id:request,bytes:Array.from(bytes),wire,payload:payload.wire,text:payload.text,language,pcm:pcm.buffer},[pcm.buffer]);});
     }});
   async function present(frame){
-    if(language!=='ja'||frame.type!=='data')return;
+    if(language!=='ja'||!frame.text)return;
     emit({kind:'presentation-start',sender:frame.sender,seq:frame.seq,session});let displayed=false;
     try{
       const quick=await dictionaryFormat(frame.text,null,c.readingPython);
-      if(quick?.engine==='windows-ime'){const text=parseDisplay(JSON.stringify(quick),frame.text,quick.reading);emit({kind:'message-display',sender:frame.sender,seq:frame.seq,session,received:frame.text,wire:frame.wire,text,readingCheck:'windows-ime'});displayed=true;return;}
+      if(quick?.engine==='windows-ime'){const text=parseDisplay(JSON.stringify(quick),frame.text,quick.reading);emit({kind:'message-display',type:frame.type,sender:frame.sender,seq:frame.seq,session,received:frame.text,wire:frame.wire,text,readingCheck:'windows-ime'});displayed=true;return;}
       const raw=await model([{role:'system',content:'あなたは受信したひらがなを読みやすい漢字かな交じりの表記に整える係です。返答や説明、新情報を加えず、同じ言葉だけを表記変更します。同音異義語が不明ならひらがなを維持します。JSONのdisplayに整えた文、readingにその文の正確なひらがな読みを返してください。句読点を除き受信文の読みを変えないこと。'},{role:'user',content:JSON.stringify({topic:c.topic,received:frame.text})}],null,'display',DISPLAY_SCHEMA);
       const proposed=JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0]||'{}');
       const checked=await dictionaryFormat(frame.text,proposed.display,c.readingPython);
       const text=checked?parseDisplay(JSON.stringify(checked),frame.text,checked.reading):parseDisplay(raw,frame.text);
-      emit({kind:'message-display',sender:frame.sender,seq:frame.seq,session,received:frame.text,wire:frame.wire,text,readingCheck:checked?'dictionary':'model'});displayed=true;
+      emit({kind:'message-display',type:frame.type,sender:frame.sender,seq:frame.seq,session,received:frame.text,wire:frame.wire,text,readingCheck:checked?'dictionary':'model'});displayed=true;
     }catch{
       const checked=await dictionaryFormat(frame.text,null,c.readingPython);
-      if(checked){try{const text=parseDisplay(JSON.stringify(checked),frame.text,checked.reading);emit({kind:'message-display',sender:frame.sender,seq:frame.seq,session,received:frame.text,wire:frame.wire,text,readingCheck:'dictionary-fallback'});displayed=true;}catch{}}
+      if(checked){try{const text=parseDisplay(JSON.stringify(checked),frame.text,checked.reading);emit({kind:'message-display',type:frame.type,sender:frame.sender,seq:frame.seq,session,received:frame.text,wire:frame.wire,text,readingCheck:'dictionary-fallback'});displayed=true;}catch{}}
     } // The CRC-verified kana remains usable if optional formatting fails.
     finally{emit({kind:'presentation-end',sender:frame.sender,seq:frame.seq,session,displayed});}
   }
   const decoder=new PhoneticDecoder({language,wpm:c.wpm,onMark:e=>emit({kind:'mark',signalSender:incomingSignal?.sender,signalSeq:incomingSignal?.seq,signalType:incomingSignal?.type,...e}),onCharacter:e=>emit({kind:'phonetic-character',...e}),
     onError:(message,observed={})=>emit({kind:'invalid',message,...observed,signalSender:incomingSignal?.sender,signalSeq:incomingSignal?.seq}),
-    onFrame:f=>{const frame={...f,room,session};emit({kind:'frame',frame,phonetic:true});present(frame);link.receive(frame).catch(error=>emit({kind:'error',message:error.message}));}});
+    onFrame:f=>{const frame={...f,room,session};emit({kind:'frame',frame,phonetic:true});present(frame);link.receive(frame.type==='ack'?{...frame,text:''}:frame).catch(error=>emit({kind:'error',message:error.message}));}});
   class ConversationAgent extends MorseAgent {
     systemPrompt(){return discussionPrompt({role,topic:c.topic,language,turn:this.currentSeq,last:this.currentSeq===c.maxTurns});}
   }

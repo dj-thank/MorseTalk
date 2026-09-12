@@ -95,6 +95,9 @@ with sync_playwright() as pw:
         assert page.locator('#strip').get_attribute('data-signal-role')=='0'
         print('PASS sender A owns the signal colour while receiver B owns the decoder event',flush=True)
         emit({'kind':'channel','role':0,'sender':1,'seq':1,'type':'ack'})
+        emit({'kind':'phonetic-tx','role':1,'seq':1,'type':'ack'})
+        expect(page.locator('#lane-1 .ack-message')).to_contain_text('端末Bがメッセージ1の受信を確認しました（本文なしACK）。')
+        expect(page.locator('#lane-1 .ack-message')).to_contain_text('送信中')
         emit({'kind':'mark','role':0,'signalSender':1,'signalSeq':1,'signalType':'ack','units':1,'on':True})
         emit({'kind':'generated','role':1,'seq':2,'text':'次の返答','inferenceMs':400,'origin':'ai'})
         expect(page.locator('#phase-0')).to_have_text('到達確認を待機')
@@ -102,6 +105,8 @@ with sync_playwright() as pw:
         assert page.locator('#strip').get_attribute('data-signal-role')=='1'
         emit({'kind':'channel','role':0,'sender':1,'seq':1,'type':'ack','phase':'complete'})
         expect(page.locator('#phase-1')).to_have_text('返答を送信準備')
+        emit({'kind':'ack-sent','role':1,'seq':1})
+        expect(page.locator('#lane-1 .ack-message')).to_contain_text('送信済み')
         print('PASS blue ACK signal is labelled as B confirmation, never as A message audio',flush=True)
         reset();emit({'kind':'topic-context','role':0,'topic':'会話して','starter':True,'peer':1})
         emit({'kind':'topic-context','role':1,'topic':'会話して','starter':False,'peer':0})
@@ -121,6 +126,23 @@ with sync_playwright() as pw:
         }""")
         assert formatted=={'accepted':True,'text':'話','kana':'はなし','rejected':True},formatted
         print('PASS kanji replaces only its verified kana; duplicates and stale results cannot overwrite the next message',flush=True)
+        waiting=page.evaluate("""()=>{
+          inlineProof.reset();inlineProof.update('HA NA SHI',{final:true,animate:false});inlineProof.format('話',{wire:'HA NA SHI'});
+          inlineProof.waiting();const placeholder=document.getElementById('message-0').textContent;
+          const staleAccepted=inlineProof.format('古い話',{wire:'HA NA SHI'});
+          inlineProof.update('NA',{animate:false});return {placeholder,staleAccepted,text:document.getElementById('message-0').textContent};
+        }""")
+        assert waiting=={'placeholder':'返答を待っています','staleAccepted':False,'text':'な'},waiting
+        print('PASS waiting clears the old message, rejects late formatting, and yields to received letters',flush=True)
+        ack=page.evaluate("""async()=>{
+          const {AckMessage}=await import('/monitor/ack-message.mjs');const a=new AckMessage(document.getElementById('message-0'));
+          a.begin(1,9,'receiving');const empty=a.body.textContent;
+          a.progress(1,9,'J');const first=a.body.textContent;a.progress(1,9,'JU');await new Promise(r=>setTimeout(r,130));const kana=a.body.textContent;
+          const wire='JU SHI N SHI MA SHI TA';a.progress(1,9,wire,{final:true,state:'received'});const decoded=a.body.textContent;a.format(1,9,wire,'受信しました');const final=a.body.textContent;
+          a.hide();a.begin(1,10,'receiving');const next=a.body.textContent;a.root.remove();return {empty,first,kana,decoded,final,next};
+        }""")
+        assert ack=={'empty':'','first':'J','kana':'じゅ','decoded':'じゅしんしました','final':'受信しました','next':''},ack
+        print('PASS ACK is transcribed from received letters, with no prefilled receiver text',flush=True)
         assert page.locator('#sound').get_attribute('data-audio-state')=='closed'
         assert page.locator('#sound-label').inner_text()!='音あり'
         page.locator('#sound-test').click()

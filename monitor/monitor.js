@@ -3,6 +3,7 @@
  * External endpoints are observed; the Start button owns a separate local PCM session. Optional readings/guesses come from a local Gemma 4 E2B. */
 import { packFastFrame, fastWire, fastSegments, parseFastWire, unpackFastFrame } from '../app/core/fast-codec.mjs';
 import { InlineMessage } from './inline-message.mjs';
+import { AckMessage, ackText } from './ack-message.mjs';
 import { SignalConversation } from './conversation.js';
 import { SignalAudio } from './signal-audio.mjs';
 import { INTERNATIONAL } from '../app/core/morse.mjs';
@@ -94,6 +95,7 @@ requestAnimationFrame(drawStrip);
 const lanes=[0,1].map(role=>({role,letters:'',acquired:false,text:'',dir:'idle',marks:0,e2bText:'',e2bTimer:null,lampTimer:null,anim:null,txAt:0,meta:null}));
 const el=(role,name)=>$(`${name}-${role}`);
 const inlineMessages=[0,1].map(role=>new InlineMessage($(`message-${role}`)));
+const acknowledgements=[0,1].map(role=>new AckMessage($(`message-${role}`)));
 let receiver=1,sharedSeq=null,revealEpoch=0,revealTimers=[],sharedReady='',sharedRevealed='';
 function cancelReveal(){revealEpoch++;for(const t of revealTimers)clearTimeout(t);revealTimers=[];sharedReady='';sharedRevealed='';}
 function beginReceive(sender,seq){
@@ -150,7 +152,7 @@ function phoneticProgress(role,event){
   typedMessage(event.text);
 }
 function phoneticFrame(role,frame){
-  if(frame.type==='ack')return;
+  if(frame.type==='ack'){if(frame.wire)acknowledgements[frame.sender].progress(frame.sender,frame.seq,frame.wire,{final:true,state:'received',language:lanes[role].meta?.language||'ja'});else acknowledgements[frame.sender].show(frame.sender,frame.seq,'received');log(frame.sender?'b':'a',`端末${frame.sender?'B':'A'} · ACK`,frame.text||ackText(frame.sender,frame.seq),`${turnKey(frame.sender,frame.seq)}:ack`);return;}
   if(lanes[frame.sender].messageSeq!==frame.seq)inlineMessages[frame.sender].reset();
   lanes[frame.sender].messageSeq=frame.seq;lanes[frame.sender].lastDelivered={seq:frame.seq,text:frame.text,wire:frame.wire};
   inlineMessages[frame.sender].update(frame.wire,{language:lanes[role].meta?.language||'ja',final:true,animate:false});$('message-state-'+frame.sender).textContent='✓ 届きました';
@@ -351,6 +353,8 @@ function offline(role,label='切断'){
   if(lanes[role].stopped)label='停止';if(lanes[role].completed)label='完了';
   chip(role?'chip-b':'chip-a','warn',label);
   phase(role,'idle',label);el(role,'lamp-label').textContent=label;
+  acknowledgements[role].interrupt();
+  if(inlineMessages[role].element.classList.contains('waiting'))inlineMessages[role].waiting(label==='停止'?'会話を停止しました':'入力を待っています');
   cancelReplay(role);setDir(role,'idle',label);
   const l=lanes[role];if(l.lastWire){resetLane(role);snapshotWire(role,l.lastWire);}
   const box=el(role,'awareness');if(box.dataset.thinking==='true'){box.dataset.thinking='false';const heading=box.querySelector('.cognition-heading');if(heading)heading.textContent='推論 · 中断';const rows=box.querySelectorAll('.cognition-row');if(rows.length>1)rows[rows.length-1].querySelector('span').textContent='返答の生成は完了していません';}
@@ -395,6 +399,7 @@ function handle(ev,live=true){
       cognition(role,{source:'topic',understanding:ev.topic,focus:ev.starter?'話題から最初の見解を組み立てます':'Aの発言を受け取ってから返答します',thinking:ev.starter});phase(role,ev.starter?'think':'receive',ev.starter?'話題から最初の一言を構成':'Aの発言を待機');return;}
     case 'thinking':agentPhase(role,'think','返答を推論中');return;
     case 'inference-input':
+      inlineMessages[role].waiting('返答を考えています…');l.messageSeq=ev.seq;l.lastDelivered=null;el(role,'message-state').textContent='推論中';
       agentPhase(role,'think',ev.attempt?'入力を確認して再生成中':'返答を考えています');
       el(role,'input').textContent=ev.input;el(role,'context').textContent=`履歴・指示 ${ev.messageCount} 件 / 入力 ${ev.inputBytes} B / 返答上限 ${ev.maxBytes} B`;
       el(role,'inference').textContent='Gemma 4 E2B';
@@ -405,6 +410,7 @@ function handle(ev,live=true){
       received.textContent=ev.source==='topic'?`話題「${ev.received}」を理解`:`${role?'A':'B'}から受信「${ev.received}」`;focus.textContent=`→ ${ev.focus}`;box.replaceChildren(received,focus);box.hidden=false;return;}
     case 'repairing':agentPhase(role,'think','送信前に返答を再生成');el(role,'context').textContent=ev.reason;return;
     case 'generated':{
+      inlineMessages[role].waiting('送信を準備しています…');el(role,'message-state').textContent='送信準備';
       const human=ev.origin?.startsWith('human-');
       l.generated=ev.text;el(role,'output-label').textContent=human?'最初の話題':'返答';el(role,'output').textContent=ev.text;
       el(role,'inference').textContent=human?'人の入力':`推論 ${(ev.inferenceMs/1000).toFixed(2)} s`;
@@ -418,11 +424,12 @@ function handle(ev,live=true){
       try{if(parseFastWire(wire).type==='ack')return;}catch{}
       runWire(role,wire,'rx','受信');
     }return;
-    case 'phonetic-character':if(live)phoneticProgress(role,ev);return;
+    case 'phonetic-character':if(live){if(ev.type==='ack')acknowledgements[ev.sender].progress(ev.sender,ev.seq,ev.wire,{boundary:ev.boundary,language:lanes[role].meta?.language||'ja'});else phoneticProgress(role,ev);}return;
     case 'preparing-reading':phase(role,'think','ことばを準備');return;
     case 'phonetic-tx':{
       if(live)soundOutput.play(ev,{wpm:l.meta?.wpm||60});
-      if(ev.type==='ack')return;
+      if(ev.type==='ack'){if(ev.payload)acknowledgements[role].begin(role,ev.seq,'sending');else acknowledgements[role].show(role,ev.seq,'sending');log(role?'b':'a',`端末${role?'B':'A'} · ACK`,ev.text||ackText(role,ev.seq),`${turnKey(role,ev.seq)}:ack`);return;}
+      acknowledgements[role].hide();
       if(live||l.messageSeq!==ev.seq){l.messageSeq=ev.seq;l.lastDelivered=null;inlineMessages[role].reset();$('message-state-'+role).textContent=live?'送信中':'記録';}
       const key=turnKey(role,ev.seq);l.txTimes=l.txTimes||new Map();l.txTimes.set(ev.seq,ev.t||Date.now());
       log(role?'b':'a',`Agent ${role?'B':'A'} · ${ev.seq}`,ev.text,key);metrics.turns=Math.max(metrics.turns,ev.seq);bump();return;}
@@ -430,6 +437,7 @@ function handle(ev,live=true){
       if(lanes[ev.sender]?.messageSeq===ev.seq)el(ev.sender,'message-state').textContent='漢字に整えています';return;
     case 'message-display':{
       const writer=lanes[ev.sender];if(!writer||writer.meta?.session!==ev.session)return;
+      if(ev.type==='ack'){acknowledgements[ev.sender].format(ev.sender,ev.seq,ev.wire,ev.text);log(ev.sender?'b':'a',`端末${ev.sender?'B':'A'} · ACK`,ev.text,`${turnKey(ev.sender,ev.seq)}:ack`);return;}
       if(writer.messageSeq===ev.seq&&writer.lastDelivered?.wire===ev.wire&&writer.lastDelivered.text===ev.received){
         if(inlineMessages[ev.sender].format(ev.text,{wire:ev.wire}))el(ev.sender,'message-state').textContent='✓ 届きました';
       }
@@ -481,7 +489,9 @@ function handle(ev,live=true){
       l.txTimes?.delete(ev.seq);
       if(rtt!==null)$('m-ack').textContent=`${rtt} ms`;
       agentPhase(role,'ack','返答を待っています');
+      if((lanes[1-role].messageSeq||0)<ev.seq+1){inlineMessages[1-role].waiting();el(1-role,'message-state').textContent='返答待ち';}
       return;}
+    case 'ack-sent':if(acknowledgements[role].inline)acknowledgements[role].begin(role,ev.seq,'sent');else acknowledgements[role].show(role,ev.seq,'sent');return;
     case 'timeout':metrics.retry++;bump();phase(role,'send','受信確認なし・再送');return;
     case 'duplicate':return;
     case 'invalid':case 'error':
@@ -496,7 +506,7 @@ function handle(ev,live=true){
   }
 }
 function clearDisplay(){
-  for(const role of [0,1]){inlineMessages[role].reset();$('message-state-'+role).textContent='待機';}
+  for(const role of [0,1]){inlineMessages[role].reset();acknowledgements[role].hide();$('message-state-'+role).textContent='待機';}
   displayEpoch++;demoRunning=false;demoAvailability();cancelReveal();sharedSeq=null;$('decode-output').textContent='—';$('decode-output').dataset.text='';$('decode-kana').textContent='—';$('decode-letters').replaceChildren();$('decode-code').textContent='· — ·';$('decode-letter').textContent='—';$('decode-progress').textContent='0';$('decode-heading').textContent='信号から、言葉へ。';$('decode-check').textContent='受信待ち';$('decode-stage').textContent='受信待ち';$('decode-bytes').textContent='—';
   for(const role of [0,1]){
     cancelReplay(role);resetLane(role);const l=lanes[role];l.lastWire=null;l.generated='';l.lastFrame=null;l.txTimes=new Map();l.channelBusy=null;l.afterChannel=null;l.messageSeq=null;l.lastDelivered=null;

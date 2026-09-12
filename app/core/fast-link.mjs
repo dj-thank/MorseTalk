@@ -8,7 +8,7 @@ export class ReliableMorseLink {
   constructor({room='0000',session,sender,sendAudio,onData=()=>{},onEvent=()=>{},ackDelayMs=220,ackTimeoutMs=4000,maxRetries=1,continuous=false}){
     // Validate configuration using the same encoder as the actual send path.
     packFastFrame({room,session,sender,seq:1,text:'test'});
-    if(typeof sendAudio!=='function'||!Number.isFinite(ackDelayMs)||ackDelayMs<0||ackDelayMs>5000||!Number.isFinite(ackTimeoutMs)||ackTimeoutMs<1||ackTimeoutMs>30000||!Number.isInteger(maxRetries)||maxRetries<0||maxRetries>2)throw new Error('リンク設定が不正です。');
+    if(typeof sendAudio!=='function'||!Number.isFinite(ackDelayMs)||ackDelayMs<0||ackDelayMs>5000||!Number.isFinite(ackTimeoutMs)||ackTimeoutMs<1||ackTimeoutMs>180000||!Number.isInteger(maxRetries)||maxRetries<0||maxRetries>2)throw new Error('リンク設定が不正です。');
     Object.assign(this,{room,session,sender,sendAudio,onData,onEvent,ackDelayMs,ackTimeoutMs,maxRetries,continuous});
     this.open=true;this.queue=Promise.resolve();this.pending=null;this.incoming=new Map();this.pendingAcks=new Map();this.nextReceive=sender===0?2:1;this.nextSend=sender===0?1:2;
   }

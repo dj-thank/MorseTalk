@@ -152,7 +152,9 @@ class Hub:
             async for raw in ws:
                 if not isinstance(raw,str) or len(raw)>4000:continue
                 request=json.loads(raw)
-                if not isinstance(request.get('text'),str) or not 0<len(request['text'])<=600:continue
+                if not isinstance(request,dict):continue
+                if not isinstance(request.get('text'),str) or not 0<len(request['text'])<=600:
+                    await ws.send(json.dumps({'id':request.get('id'),'result':{'error':'Reading text must contain 1-600 characters'}}));continue
                 process=await asyncio.create_subprocess_exec(os.environ.get('MORSETALK_READING_PYTHON',sys.executable),'-X','utf8',str(ROOT/'tools/japanese_reading.py'),stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL)
                 try:
                     body=json.dumps({'text':request['text'],'mode':'format' if request.get('mode')=='format' else 'reading'}).encode('utf-8')

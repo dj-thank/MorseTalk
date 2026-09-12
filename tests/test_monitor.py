@@ -12,6 +12,14 @@ class Feed:
         except StopIteration:raise StopAsyncIteration
 
 class MonitorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_reading_text_returns_error_instead_of_timing_out(self):
+        class ReadingSocket(Feed):
+            request=SimpleNamespace(path='/reading')
+            async def send(self,text):self.responses.append(json.loads(text))
+        ws=ReadingSocket([json.dumps({'id':'missing'}),json.dumps({'id':'empty','text':''})]);ws.responses=[]
+        await Hub().handler(ws)
+        self.assertEqual([r['id'] for r in ws.responses],['missing','empty'])
+        self.assertTrue(all(r['result']['error'] for r in ws.responses))
     async def test_long_conversation_keeps_session_settings_after_history_rolls(self):
         hub=Hub(history=4)
         for role in (0,1):await hub.broadcast(json.dumps({'kind':'session','role':role,'session':123,'wpm':80.1}))
