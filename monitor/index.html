@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0c1117">
+<title>MorseTalk · Signal Monitor</title><link rel="icon" href="monitor/icon.svg"><link rel="stylesheet" href="monitor/monitor.css"></head>
+<body><main class="deck">
+<header class="top">
+  <div class="brand"><span class="mark" aria-hidden="true"></span><div><h1>MorseTalk <span>SIGNAL MONITOR</span></h1><p>トン・ツー → 符号 → バイト → 文字。端末が今まさに行っている復号を、そのまま映します。</p></div></div>
+  <div class="chips">
+    <span class="chip" id="chip-hub"><i></i>監視サーバー</span>
+    <span class="chip" id="chip-a"><i></i>端末A</span>
+    <span class="chip" id="chip-b"><i></i>端末B</span>
+    <span class="chip" id="chip-e2b"><i></i>Gemma 4 E2B</span>
+    <button id="demo" class="ghost" type="button">デモ再生（端末なし）</button>
+    <button id="clear" class="ghost" type="button">表示を消去</button>
+  </div>
+</header>
+
+<section class="air" aria-label="電波・音のタイムライン">
+  <div class="air-head"><span class="eyebrow">ON AIR · MT2 INTERNATIONAL MORSE · 4,000 Hz</span><span id="air-meta" class="mono">— WPM · unit — ms</span></div>
+  <canvas id="strip" height="150"></canvas>
+  <div class="lamps">
+    <div class="lamp" id="lamp-0"><div class="glow"></div><div class="face"><span class="who">A</span><span class="sym" id="sym-0">·</span></div><span class="lamp-label" id="lamp-label-0">待機</span></div>
+    <div class="now"><span id="now-mark" class="now-mark">—</span><span id="now-unit" class="mono">unit</span></div>
+    <div class="lamp" id="lamp-1"><div class="glow"></div><div class="face"><span class="who">B</span><span class="sym" id="sym-1">·</span></div><span class="lamp-label" id="lamp-label-1">待機</span></div>
+  </div>
+</section>
+
+<section class="lanes">
+  <article class="lane" id="lane-0" data-role="0">
+    <div class="lane-head"><span class="who">A</span><h2>端末A</h2><span class="dir" id="dir-0">待機</span><span class="mono stat" id="stat-0"></span></div>
+    <div class="stage"><span class="label">符号</span><div class="marks" id="marks-0"><span class="empty">· ─ ·</span></div></div>
+    <div class="stage"><span class="label">Base32</span><div class="letters mono" id="letters-0"></div></div>
+    <div class="stage"><span class="label">バイト</span><div class="bytes mono" id="bytes-0"></div><div class="header mono" id="header-0"></div></div>
+    <div class="stage text"><span class="label">復元</span>
+      <div class="rows">
+        <div class="row romaji mono" id="romaji-0"></div>
+        <div class="row kana" id="kana-0"></div>
+        <div class="row main" id="text-0"><span class="caret"></span></div>
+        <div class="row guess" id="guess-0"></div>
+      </div>
+    </div>
+    <div class="stage crc"><span class="label">検査</span><div class="crc-row" id="crc-0"><span class="pill">CRC32 待ち</span></div></div>
+  </article>
+  <article class="lane" id="lane-1" data-role="1">
+    <div class="lane-head"><span class="who">B</span><h2>端末B</h2><span class="dir" id="dir-1">待機</span><span class="mono stat" id="stat-1"></span></div>
+    <div class="stage"><span class="label">符号</span><div class="marks" id="marks-1"><span class="empty">· ─ ·</span></div></div>
+    <div class="stage"><span class="label">Base32</span><div class="letters mono" id="letters-1"></div></div>
+    <div class="stage"><span class="label">バイト</span><div class="bytes mono" id="bytes-1"></div><div class="header mono" id="header-1"></div></div>
+    <div class="stage text"><span class="label">復元</span>
+      <div class="rows">
+        <div class="row romaji mono" id="romaji-1"></div>
+        <div class="row kana" id="kana-1"></div>
+        <div class="row main" id="text-1"><span class="caret"></span></div>
+        <div class="row guess" id="guess-1"></div>
+      </div>
+    </div>
+    <div class="stage crc"><span class="label">検査</span><div class="crc-row" id="crc-1"><span class="pill">CRC32 待ち</span></div></div>
+  </article>
+</section>
+
+<section class="bottom">
+  <div class="panel log"><div class="panel-head"><h3>会話</h3><span class="mono" id="turns">0 turns</span></div><div id="log" class="log-body"><p class="empty">まだ通信はありません。端末で受信待機を始めるか、デモ再生を押してください。</p></div></div>
+  <div class="panel metrics"><div class="panel-head"><h3>回線</h3></div>
+    <dl class="kv">
+      <div><dt>速度</dt><dd id="m-wpm">—</dd></div><div><dt>1短点</dt><dd id="m-unit">—</dd></div><div><dt>経路</dt><dd id="m-transport">—</dd></div>
+      <div><dt>受信バイト</dt><dd id="m-bytes">0</dd></div><div><dt>圧縮</dt><dd id="m-comp">—</dd></div><div><dt>再送</dt><dd id="m-retry">0</dd></div>
+      <div><dt>直近ACK</dt><dd id="m-ack">—</dd></div><div><dt>E2B応答</dt><dd id="m-e2b">—</dd></div><div><dt>イベント</dt><dd id="m-events">0</dd></div>
+    </dl>
+  </div>
+  <div class="panel how"><div class="panel-head"><h3>いま起きていること</h3></div>
+    <ol class="steps" id="steps">
+      <li data-step="mark"><b>トン・ツー</b><span>4,000 Hz の音を検出し、長さで短点・長点に分ける</span></li>
+      <li data-step="letter"><b>符号 → 文字</b><span>国際モールス表で A–Z / 2–7 の32文字に戻す</span></li>
+      <li data-step="byte"><b>Base32 → バイト</b><span>5ビットずつ束ねて8ビットのバイト列にする</span></li>
+      <li data-step="header"><b>ヘッダー</b><span>M2 / 通信コード / セッション / 端末 / 連番 / 長さ</span></li>
+      <li data-step="text"><b>LZ展開 → UTF-8</b><span>圧縮を解き、日本語をそのまま復元する</span></li>
+      <li data-step="crc"><b>CRC32</b><span>一致した本文だけを相手に渡し、ACKを返す</span></li>
+    </ol>
+  </div>
+</section>
+<footer class="foot"><span>監視は 127.0.0.1 の中だけで動きます。端末は「デモ監視」を有効にしたときだけ、この画面へ復号途中のデータを送ります。</span><span id="foot-status" class="mono"></span></footer>
+</main>
+<script type="module" src="monitor/monitor.js"></script>
+</body></html>

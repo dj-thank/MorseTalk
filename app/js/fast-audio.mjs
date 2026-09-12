@@ -4,7 +4,7 @@ export class FastAudio {
   constructor(options={}){this.options=options;this.generation=0;this.closed=true;this.job=null;}
   async start(onEvent){
     if(!this.closed)throw new Error('受信は開始済みです。');
-    this.closed=false;const generation=++this.generation;let url;
+    this.closed=false;const generation=++this.generation;let url;this.onEvent=onEvent;
     try{
       const Context=globalThis.AudioContext||globalThis.webkitAudioContext;
       if(!Context||!navigator.mediaDevices?.getUserMedia)throw new Error('マイクにはWindowsランチャーまたはAndroidアプリを使ってください。');
@@ -39,6 +39,7 @@ export class FastAudio {
     const generation=this.generation,ctx=this.ctx;
     const {pcm,sampleRate}=fastPcm(bytes,{...this.options,sampleRate:ctx.sampleRate});
     const buffer=ctx.createBuffer(1,pcm.length,sampleRate);buffer.copyToChannel(pcm,0);
+    if(this.options.telemetry){try{this.onEvent?.({kind:'tx',bytes:Array.from(bytes),seconds:pcm.length/sampleRate});}catch{}}
     const source=ctx.createBufferSource();source.buffer=buffer;source.connect(ctx.destination);
     this.node.port.postMessage({kind:'mute',value:true});
     await new Promise((resolve,reject)=>{

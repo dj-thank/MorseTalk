@@ -5,7 +5,9 @@ class FastInputProcessor extends AudioWorkletProcessor {
     this.decoder=new FastMorseDecoder({...options.processorOptions,sampleRate,
       onFrame:frame=>this.port.postMessage({kind:'frame',frame}),
       onError:message=>this.port.postMessage({kind:'error',message}),
-      onLevel:level=>this.port.postMessage({kind:'level',level})});
+      onLevel:level=>this.port.postMessage({kind:'level',level}),
+      onMark:mark=>this.port.postMessage({kind:'mark',...mark}),
+      onLetter:letter=>this.port.postMessage({kind:'letter',...letter})});
     this.port.onmessage=event=>{
       const d=event.data;
       if(d?.kind==='mute'){this.muted=Boolean(d.value);this.decoder.reset();}

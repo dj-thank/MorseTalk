@@ -39,8 +39,10 @@ class Phone:
         self.serial, self.local_port = serial, local_port
         self.model = adb(serial, 'shell', 'getprop', 'ro.product.model')
 
-    def prepare(self, relay_port: int):
+    def prepare(self, relay_port: int, monitor_port: int | None = None):
         adb(self.serial, 'reverse', f'tcp:{relay_port}', f'tcp:{relay_port}')
+        if monitor_port:
+            adb(self.serial, 'reverse', f'tcp:{monitor_port}', f'tcp:{monitor_port}')
         adb(self.serial, 'shell', 'am', 'force-stop', PKG)
         adb(self.serial, 'shell', 'am', 'start', '-n', f'{PKG}/.MainActivity')
         for _ in range(30):
@@ -77,9 +79,10 @@ class Phone:
                     return res.get('result', {}).get('value')
 
 
-async def pair(a: Phone, b: Phone, mode_a: str, mode_b: str, speed: int, port: int):
+async def pair(a: Phone, b: Phone, mode_a: str, mode_b: str, speed: int, port: int, monitor_port: int | None = None):
     await asyncio.sleep(1.5)  # let the page's own startup finish
-    common = f"$('use-usb').click();await w(200);set('relay-url','ws://127.0.0.1:{port}/v1');"
+    monitor = f"$('monitor-enable').checked=true;$('monitor-url').value='ws://127.0.0.1:{monitor_port}/feed';" if monitor_port else "$('monitor-enable').checked=false;"
+    common = f"$('use-usb').click();await w(200);set('relay-url','ws://127.0.0.1:{port}/v1');" + monitor
     invite = await a.js(common + f"set('dialogue-mode','{mode_a}');set('role','0');set('speed','{speed}');$('make-online').click();await w(1200);return $('invite-text').value;")
     if not invite or not invite.startswith('MTO1.'):
         raise SystemExit('A could not create an invite.')
@@ -97,8 +100,9 @@ def main(argv=None) -> int:
     p.add_argument('--b', help='serial of phone B (replies)')
     p.add_argument('--mode-a', choices=['manual', 'ai'], default='manual')
     p.add_argument('--mode-b', choices=['manual', 'ai'], default='manual')
-    p.add_argument('--speed', type=int, choices=[120, 300, 600, 1200], default=120)
+    p.add_argument('--speed', type=int, choices=[60, 120, 300, 600, 1200], default=60)
     p.add_argument('--port', type=int, default=PORT)
+    p.add_argument('--monitor-port', type=int, default=None, help='tools/monitor_server.py のポート。指定時は両端末の「デモ監視」を有効にする')
     args = p.parse_args(argv)
     found = devices()
     a_serial, b_serial = args.a, args.b
@@ -108,8 +112,8 @@ def main(argv=None) -> int:
         a_serial, b_serial = found
     a, b = Phone(a_serial, 9231), Phone(b_serial, 9232)
     print(f'A: {a.model} ({a.serial})\nB: {b.model} ({b.serial})', flush=True)
-    a.prepare(args.port); b.prepare(args.port)
-    ready, b_state = asyncio.run(pair(a, b, args.mode_a, args.mode_b, args.speed, args.port))
+    a.prepare(args.port, args.monitor_port); b.prepare(args.port, args.monitor_port)
+    ready, b_state = asyncio.run(pair(a, b, args.mode_a, args.mode_b, args.speed, args.port, args.monitor_port))
     print(f'A: {ready}\nB: {b_state}')
     return 0
 
