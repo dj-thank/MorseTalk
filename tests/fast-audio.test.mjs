@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import {FastAudio} from '../app/js/fast-audio.mjs';
 import {packFastFrame} from '../app/core/fast-codec.mjs';
 const bytes=packFastFrame({session:10,sender:0,seq:1,text:'はい'});
+test('Playback observer receives the audio clock only after the source starts',async()=>{
+ const e=install(),a=new FastAudio({wpm:1200});
+ try{await a.start(()=>{});a.ctx.currentTime=12;let called=0;
+ await a.transmit(bytes,({ctx,startAt})=>{called++;assert.equal(ctx,a.ctx);assert.equal(startAt,12.025);assert.equal(e.events.at(-1),'tx-start');});
+ assert.equal(called,1);
+ }finally{a.stop();e.restore();}
+});
 function install(){
  const names=['AudioContext','AudioWorkletNode','navigator'],old=Object.fromEntries(names.map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
  const env={events:[],contexts:[],micCalls:0};

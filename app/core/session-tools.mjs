@@ -1,5 +1,5 @@
 /** UI/session helpers; this code never sends audio, calls AI, or persists content. */
-const SPEEDS = [120, 300, 600, 1200];
+const SPEEDS = [60, 120, 300, 600, 1200];
 export function connectionCode(options) {
   const {room, session, wpm, maxTurns, maxReplyBytes} = options;
   if (!/^[0-9]{4}$/.test(room) || !Number.isInteger(session) || session <= 0 || session > 0xffffffff ||
@@ -11,7 +11,7 @@ export function connectionCode(options) {
 }
 export function parseConnectionCode(text) {
   if (typeof text !== 'string' || text.length > 100) throw new Error('接続コードが長すぎます。');
-  const match = /^MT2\|([0-9]{4})\|([0-9a-fA-F]{8})\|(120|300|600|1200)\|([1-9][0-9]?)\|([1-9][0-9]{1,2})$/.exec(text.trim());
+  const match = /^MT2\|([0-9]{4})\|([0-9a-fA-F]{8})\|(60|120|300|600|1200)\|([1-9][0-9]?)\|([1-9][0-9]{1,2})$/.exec(text.trim());
   if (!match) throw new Error('接続コードは「MT2|…」の形式です。相手のコードをそのまま貼り付けてください。');
   const result = {room:match[1], session:parseInt(match[2],16), wpm:Number(match[3]), maxTurns:Number(match[4]), maxReplyBytes:Number(match[5])};
   connectionCode(result); // All fields validate before the UI changes even one of them.

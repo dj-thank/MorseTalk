@@ -36,6 +36,18 @@ public final class SmokeInstrumentation extends Instrumentation {
             waitForIdleSync();
             runOnMainSync(() -> web=findWeb(activity.getWindow().getDecorView()));
             if(web==null)throw new AssertionError("Actual app WebView missing");
+            waitJs("document.readyState==='complete' && typeof window.morsetalkSignalSnapshot==='function'",30000);
+            check("Bundled two-phone signal screen loaded",js("location.href"));
+            require("!!document.querySelector('#message-0') && !!document.querySelector('#message-1')","Signal messages missing");
+            boolean signalOnly=arguments!=null&&"true".equals(arguments.getString("signal_only","false"));
+            if(signalOnly){
+                require("document.documentElement.scrollWidth<=innerWidth","Signal screen horizontal overflow");
+                require("!!window.NativeBridge && typeof NativeBridge.request==='function'","Signal native bridge missing");
+                js("window.workletProbe=null;(async()=>{let c;try{c=new AudioContext({sampleRate:48000});await c.audioWorklet.addModule('/js/phonetic-worklet.mjs');const n=new AudioWorkletNode(c,'morsetalk-fast-input',{processorOptions:{wpm:20,frequency:1800}});n.port.postMessage({kind:'stop'});n.disconnect();window.workletProbe='ok';}catch(e){window.workletProbe=String(e);}finally{if(c)await c.close();}})();true");
+                waitJs("window.workletProbe!==null",20000);require("window.workletProbe==='ok'","Signal AudioWorklet failed");
+                check("Signal layout, native bridge and acoustic receiver module",true);
+            }else{
+            runOnMainSync(() -> web.loadUrl("https://appassets.androidplatform.net/ai.html"));
             waitJs("document.readyState==='complete' && !!document.querySelector('#self-test')",30000);
             check("Installed APK launched; bundled AI page loaded",js("location.href"));
             require("!!window.NativeBridge && typeof NativeBridge.request==='function'","Native bridge missing");
@@ -43,7 +55,7 @@ public final class SmokeInstrumentation extends Instrumentation {
             require("document.documentElement.scrollWidth<=innerWidth","Horizontal overflow");
             check("Emulator WebView layout fits viewport",true);
             js("document.querySelector('#self-test').click();true");
-            waitJs("document.querySelector('#diagnostic').textContent.includes('4速度すべてPCM復元一致')",20000);
+            waitJs("document.querySelector('#diagnostic').textContent.includes('5速度すべてPCM復元一致')",20000);
             check("Four-speed production codec self-test in Android WebView",js("document.querySelector('#diagnostic').textContent"));
             js("window.workletProbe=null;(async()=>{let c;try{c=new AudioContext();await c.audioWorklet.addModule('/js/fast-worklet.mjs');const n=new AudioWorkletNode(c,'morsetalk-fast-input',{processorOptions:{wpm:1200}});n.port.postMessage({kind:'stop'});n.disconnect();window.workletProbe='ok';}catch(e){window.workletProbe=String(e);}finally{if(c)await c.close();}})();true");
             waitJs("window.workletProbe!==null",20000);
@@ -76,6 +88,7 @@ public final class SmokeInstrumentation extends Instrumentation {
             runOnMainSync(() -> web.loadUrl("https://appassets.androidplatform.net/index.html"));
             waitJs("document.readyState==='complete' && !!document.querySelector('#draft')",30000);
             check("Legacy voice/Morse page remains reachable",js("location.href"));
+            }
             report.put("status","passed");ok=true;
         } catch(Throwable e) {
             try {report.put("status","failed").put("error",e.toString());}catch(Exception ignored) { }

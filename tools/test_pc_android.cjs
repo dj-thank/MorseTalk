@@ -53,7 +53,7 @@ async function startDesktop(){
 }
 async function prepare(page,isAI){
   // Keep the application in the foreground; existing app lifecycle cleanup remains active.
-  if(page===phone)await page.reload();else await page.goto(sourceOrigin+'/ai.html');
+  if(page===phone)await page.goto(new URL('/ai.html',page.url()).href);else await page.goto(sourceOrigin+'/ai.html');
   await waitFor(()=>page.locator('#pc-android-guide').isVisible(),'bundled setup guide');
   await click(page,'#pc-android-guide > summary');await click(page,'#use-usb');
   await page.locator('#relay-url').fill(RELAY);

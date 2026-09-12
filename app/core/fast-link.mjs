@@ -1,14 +1,15 @@
 /** Bounded half-duplex AI conversation. Remote text is data, never executable code. */
 import { packFastFrame, parseFastWire, fastWire } from './fast-codec.mjs';
+import { utf8Encode } from './utf8.mjs';
 import { DEFAULT_GOAL, initialTopic, conversationPrompt, conversationMessages, replyIssue, topicMessage } from './conversation.mjs';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
 export class ReliableMorseLink {
-  constructor({room='0000',session,sender,sendAudio,onData=()=>{},onEvent=()=>{},ackDelayMs=220,ackTimeoutMs=4000,maxRetries=1}){
+  constructor({room='0000',session,sender,sendAudio,onData=()=>{},onEvent=()=>{},ackDelayMs=220,ackTimeoutMs=4000,maxRetries=1,continuous=false}){
     // Validate configuration using the same encoder as the actual send path.
     packFastFrame({room,session,sender,seq:1,text:'test'});
-    if(typeof sendAudio!=='function'||!Number.isFinite(ackDelayMs)||ackDelayMs<0||ackDelayMs>5000||!Number.isFinite(ackTimeoutMs)||ackTimeoutMs<1||ackTimeoutMs>30000||!Number.isInteger(maxRetries)||maxRetries<0||maxRetries>2)throw new Error('リンク設定が不正です。');
-    Object.assign(this,{room,session,sender,sendAudio,onData,onEvent,ackDelayMs,ackTimeoutMs,maxRetries});
+    if(typeof sendAudio!=='function'||!Number.isFinite(ackDelayMs)||ackDelayMs<0||ackDelayMs>5000||!Number.isFinite(ackTimeoutMs)||ackTimeoutMs<1||ackTimeoutMs>180000||!Number.isInteger(maxRetries)||maxRetries<0||maxRetries>2)throw new Error('リンク設定が不正です。');
+    Object.assign(this,{room,session,sender,sendAudio,onData,onEvent,ackDelayMs,ackTimeoutMs,maxRetries,continuous});
     this.open=true;this.queue=Promise.resolve();this.pending=null;this.incoming=new Map();this.pendingAcks=new Map();this.nextReceive=sender===0?2:1;this.nextSend=sender===0?1:2;
   }
   event(kind,detail={}){this.onEvent({kind,...detail});}
@@ -27,7 +28,7 @@ export class ReliableMorseLink {
         this.event('transmit',{seq,attempt,bytes:bytes.length});
         await this.enqueue(bytes);
         let timer;const result=await Promise.race([pending.promise,new Promise(resolve=>{timer=setTimeout(()=>resolve('timeout'),this.ackTimeoutMs);})]);clearTimeout(timer);
-        if(result==='ack'){this.nextSend+=2;this.event('delivered',{seq,attempt});return {delivered:true,attempts:attempt+1};}
+        if(result==='ack'){this.nextSend+=2;if(this.continuous&&this.nextSend>65534)this.nextSend-=65534;this.event('delivered',{seq,attempt});return {delivered:true,attempts:attempt+1};}
         if(result==='closed'||!this.open)throw new Error('送信を停止しました。');
         this.event('timeout',{seq,attempt});
       }
@@ -55,9 +56,10 @@ export class ReliableMorseLink {
     }
     if(!duplicate){
       this.incoming.set(frame.seq,frame.text);this.nextReceive+=2;
+      if(this.continuous&&this.nextReceive>65534)this.nextReceive-=65534;
       while(this.incoming.size>64)this.incoming.delete(this.incoming.keys().next().value);
       // A valid next turn also acknowledges our previous turn (lost standalone ACK).
-      if(this.pending?.seq===frame.seq-1)this.pending.resolve('ack');
+      if(this.pending?.seq===(this.continuous&&frame.seq===1?65534:frame.seq-1))this.pending.resolve('ack');
     }
     this.event(duplicate?'duplicate':'receive',{seq:frame.seq,text:frame.text});
     // Queue the turnaround immediately, so an AI reply can never jump ahead of its ACK.
@@ -85,8 +87,9 @@ export class ReliableMorseLink {
 }
 export class MorseAgent {
   constructor({link,generate,goal=DEFAULT_GOAL,style='natural',shareTopic=false,maxTurns=8,maxReplyBytes=180,onEvent=()=>{}}){
-    if(!link||typeof generate!=='function'||typeof shareTopic!=='boolean'||typeof goal!=='string'||!goal.trim()||goal.length>600||!Number.isInteger(maxTurns)||maxTurns<2||maxTurns>32||!Number.isInteger(maxReplyBytes)||maxReplyBytes<32||maxReplyBytes>512)throw new Error('AI会話設定が不正です。');
+    if(!link||typeof generate!=='function'||typeof shareTopic!=='boolean'||typeof goal!=='string'||!goal.trim()||goal.length>600||!Number.isInteger(maxTurns)||(maxTurns!==0&&(maxTurns<2||maxTurns>32))||!Number.isInteger(maxReplyBytes)||maxReplyBytes<32||maxReplyBytes>512)throw new Error('AI会話設定が不正です。');
     Object.assign(this,{link,generate,goal,style,shareTopic,maxTurns,maxReplyBytes,onEvent});
+    this.continuous=maxTurns===0;if(this.continuous){this.maxTurns=Infinity;link.continuous=true;}
     conversationPrompt({...this,sender:link.sender}); // Validate before taking ownership of onData.
     this.history=[];this.active=true;this.busy=false;this.currentSeq=null;this.pendingTopic=null;this.abort=new AbortController();
     link.onData=frame=>this.received(frame);
@@ -113,8 +116,9 @@ export class MorseAgent {
   async received(frame){
     if(!this.active)return;
     this.history.push({role:'user',content:frame.text});this.event('peer',{seq:frame.seq,text:frame.text});
+    if(this.continuous&&this.history.length>24)this.history.splice(0,this.history.length-24);
     if(frame.seq>=this.maxTurns){this.active=false;this.cancelTopic();this.event('complete',{seq:frame.seq});return;}
-    await this.reply(frame.seq+1);
+    await this.reply(this.continuous&&frame.seq===65534?1:frame.seq+1);
   }
   async reply(seq){
     if(!this.active||seq>this.maxTurns)return;
@@ -130,7 +134,9 @@ export class MorseAgent {
         this.event('thinking',{seq});let issue=null,candidate=null;
         for(let attempt=0;attempt<2;attempt++){
           if(!this.active||this.abort.signal.aborted)return;
-          text=await this.generate(conversationMessages(this.systemPrompt(),this.history,issue?{issue,text:candidate,maxReplyBytes:this.maxReplyBytes}:null),{signal:this.abort.signal,maxBytes:this.maxReplyBytes});
+          const messages=conversationMessages(this.systemPrompt(),this.history,issue?{issue,text:candidate,maxReplyBytes:this.maxReplyBytes}:null);
+          this.event('inference-input',{seq,attempt,inputOrigin:seq===1&&this.history.length===1?'topic':'peer',input:this.history[this.history.length-1]?.content||'',messageCount:messages.length,inputBytes:utf8Encode(messages.map(m=>m.content).join('\n')).length,maxBytes:this.maxReplyBytes});
+          text=await this.generate(messages,{signal:this.abort.signal,maxBytes:this.maxReplyBytes});
           if(!this.active)return;
           issue=replyIssue(text,this.history,this.maxReplyBytes);
           if(!issue)break;

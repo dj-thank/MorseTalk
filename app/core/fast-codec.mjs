@@ -6,7 +6,7 @@ import { utf8Encode, utf8Decode } from './utf8.mjs';
 import { INTERNATIONAL } from './morse.mjs';
 import { crc32, base32Encode, parseRoom } from './packet.mjs';
 export const FAST_VERSION = '0.2.1';
-export const FAST_PROFILES = Object.freeze({ cautious:120, balanced:300, fast:600, laboratory:1200 });
+export const FAST_PROFILES = Object.freeze({ air:60, cautious:120, balanced:300, fast:600, laboratory:1200 });
 export const MAX_FAST_BYTES = 512;
 const enc={encode:utf8Encode}, dec={decode:utf8Decode};
 const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -92,7 +92,7 @@ export function parseFastWire(wire){
   return unpackFastFrame(bytes);
 }
 export function fastTiming({wpm=300,frequency=4000,sampleRate=48000,volume=.18}={}){
-  if(!Object.values(FAST_PROFILES).includes(wpm))throw new Error('MT2速度は120 / 300 / 600 / 1200 WPMです。');
+  if(!Object.values(FAST_PROFILES).includes(wpm))throw new Error('MT2速度は60 / 120 / 300 / 600 / 1200 WPMです。');
   integer(sampleRate,16000,96000,'サンプルレート');
   if(!Number.isFinite(frequency)||frequency<2500||frequency>5000||frequency>=sampleRate/2)throw new Error('MT2搬送波は2500〜5000 Hzです。');
   if(!Number.isFinite(volume)||volume<0||volume>.5)throw new Error('MT2音量は0〜0.5です。');
@@ -127,8 +127,8 @@ export function fastPcm(bytes,options={}){
  * No speech recognition, timers for individual dits, or fixed 1.1-second idle delimiter.
  */
 export class FastMorseDecoder {
-  constructor({wpm=300,frequency=4000,sampleRate=48000,onFrame=()=>{},onError=()=>{},onLevel=()=>{}}={}){
-    Object.assign(this,fastTiming({wpm,frequency,sampleRate}));Object.assign(this,{onFrame,onError,onLevel});
+  constructor({wpm=300,frequency=4000,sampleRate=48000,onFrame=()=>{},onError=()=>{},onLevel=()=>{},onMark=()=>{},onLetter=()=>{}}={}){
+    Object.assign(this,fastTiming({wpm,frequency,sampleRate}));Object.assign(this,{onFrame,onError,onLevel,onMark,onLetter});
     this.window=Math.max(Math.ceil(sampleRate/frequency),Math.round(sampleRate*this.unit/2));
     this.hop=Math.max(1,Math.round(sampleRate*this.unit/16));
     this.cosStep=Math.cos(2*Math.PI*frequency/sampleRate);this.sinStep=Math.sin(2*Math.PI*frequency/sampleRate);
@@ -137,17 +137,18 @@ export class FastMorseDecoder {
   reset(){this.iqI=new Float64Array(this.window);this.iqQ=new Float64Array(this.window);this.index=0;this.sumI=0;this.sumQ=0;this.oscC=1;this.oscS=0;this.samples=0;this.peak=.02;this.high=false;this.runStart=0;this.mark='';this.wire='';this.prefix='';this.acquired=false;this.boundary=false;this.invalid=false;this.levelSamples=0;}
   finishLetter(){
     if(!this.mark)return;
-    const c=reverse.get(this.mark);this.mark='';
+    const c=reverse.get(this.mark);this.onLetter({mark:this.mark,char:c&&/[A-Z2-7]/.test(c)?c:null,acquired:this.acquired});this.mark='';
     if(!c||!/[A-Z2-7]/.test(c)){if(this.acquired)this.invalid=true;else this.prefix='';return;}
     if(!this.acquired){
       this.prefix=(this.prefix+c).slice(-2);
-      if(this.prefix==='VV'){this.acquired=true;this.wire='VV';this.invalid=false;}
+      if(this.prefix==='VV'){this.acquired=true;this.wire='VV';this.invalid=false;this.onLetter({sync:true});}
       return;
     }
     this.wire+=c;if(this.wire.length>854){this.invalid=true;this.wire='';}
   }
   finishFrame(){
     this.finishLetter();
+    if(this.wire||this.acquired||this.invalid)this.onLetter({end:true,valid:Boolean(this.wire)&&!this.invalid});
     if(this.wire&&!this.invalid){try{const frame=parseFastWire(this.wire);this.onFrame(frame);}catch(e){this.onError(e.message);}}
     else if(this.invalid)this.onError('MT2受信タイミング不一致。速度・音量・反響を確認してください。');
     this.wire='';this.mark='';this.prefix='';this.acquired=false;this.invalid=false;
@@ -170,6 +171,7 @@ export class FastMorseDecoder {
           else this.mark+=units<2?'.':'-';
           if(this.mark.length>6){if(this.acquired)this.invalid=true;else{this.mark='';this.prefix='';}}
         }
+        this.onMark({on:this.high,units:Number((duration/this.unit).toFixed(2)),seconds:Number(now.toFixed(4))});
         this.high=high;this.runStart=now;this.boundary=false;
       }else if(!high){
         const units=(now-this.runStart)/this.unit;

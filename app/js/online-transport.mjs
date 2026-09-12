@@ -1,7 +1,8 @@
 import { validateInvite, channelKeys, seal, openBox, bytesToMorse, morseToFrame, toBase64 } from '../core/online-protocol.mjs';
 /** Two-party relay transport. No audio/microphone, model calls or automatic reconnect. */
 export class OnlineTransport {
-  constructor({invite,sender,onState=()=>{},WebSocketClass=globalThis.WebSocket}) {
+  constructor({invite,sender,onState=()=>{},WebSocketClass=globalThis.WebSocket,telemetry=false}) {
+    this.telemetry=Boolean(telemetry);
     this.invite=validateInvite(invite);if(sender!==0&&sender!==1)throw Error('端末A/Bを選んでください。');
     Object.assign(this,{sender,onState,WebSocketClass});this.closed=true;this.ready=false;this.generation=0;
   }
@@ -59,11 +60,12 @@ export class OnlineTransport {
     }
     if(!this.ready||payload.t!=='morse'||payload.to!==this.nonce||payload.from!==this.peerNonce||payload.n!==this.received+1||this.received>=256)throw Error('Replay or sequence mismatch');
     const frame=morseToFrame(payload.m);if(frame.sender!==1-this.sender)throw Error('Wrong sender');
-    this.received=payload.n;this.onEvent({kind:'frame',frame});
+    this.received=payload.n;if(this.telemetry)this.onEvent({kind:'rx-wire',morse:payload.m});this.onEvent({kind:'frame',frame});
   }
   async transmit(bytes) {
     if(this.closed||!this.ready)throw Error('相手との接続確認が完了していません。');
     if(this.counter>=256)throw Error('接続の送信上限に到達しました。');
+    if(this.telemetry){try{this.onEvent({kind:'tx',bytes:Array.from(bytes),seconds:0});}catch{}}
     await this.sendPayload({t:'morse',from:this.nonce,to:this.peerNonce,n:++this.counter,m:bytesToMorse(bytes)});
   }
   fail(message) {

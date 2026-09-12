@@ -1,4 +1,7 @@
-import { packFastFrame, unpackFastFrame, fastPcm, fastDuration, FastMorseDecoder } from '../core/fast-codec.mjs';
+import { packFastFrame, unpackFastFrame, fastPcm, fastDuration, fastWire, FastMorseDecoder, FAST_PROFILES } from '../core/fast-codec.mjs';
+import { MonitorFeed } from './monitor-feed.mjs';
+let feed=null;
+function feedTx(e){try{const bytes=Uint8Array.from(e.bytes),f=unpackFastFrame(bytes);feed?.send({kind:'tx',seq:f.seq,type:f.type,text:f.text,sender:f.sender,seconds:e.seconds,wire:fastWire(bytes),bytes:Array.from(bytes)});}catch{}}
 import { prepareMessage } from '../core/packet.mjs';
 import { pcmToWav } from '../core/morse.mjs';
 import { ReliableMorseLink, MorseAgent } from '../core/fast-link.mjs';
@@ -20,7 +23,7 @@ function pollLocal(){
     if(busy||localState?.busy||localImport||agent?.busy||virtualAgents.some(a=>a.busy))pollLocal();
   },700);
 }
-function status(text){$('status').textContent=text;experience?.stage(text);}
+function status(text){$('status').textContent=text;experience?.stage(text);feed?.send({kind:'status',text});}
 function entry(label,text,kind='event'){
   $('transcript').querySelector('.empty')?.remove();
   const box=document.createElement('div');box.className=`entry ${kind}`;
@@ -34,7 +37,7 @@ function options(){
   const session=parseInt(sessionText,16),sender=Number($('role').value),wpm=Number($('speed').value),volume=Number($('volume').value),maxTurns=Number($('turns').value),maxReplyBytes=Number($('max-bytes').value);
   packFastFrame({room,session,sender,seq:1,text:'test'});
   if(!Number.isInteger(maxTurns)||maxTurns<2||maxTurns>32||!Number.isInteger(maxReplyBytes)||maxReplyBytes<32||maxReplyBytes>512)throw new Error('会話制限の数値を確認してください。');
-  if(![120,300,600,1200].includes(wpm)||!Number.isFinite(volume)||volume<.03||volume>.35)throw new Error('速度・音量の設定が不正です。');
+  if(!Object.values(FAST_PROFILES).includes(wpm)||!Number.isFinite(volume)||volume<.03||volume>.35)throw new Error('速度・音量の設定が不正です。');
   return {room,session,sender,wpm,volume,maxTurns,maxReplyBytes,frequency:4000,goal:$('goal').value,style:conversationUI?.style()||'natural',shareTopic:true};
 }
 function aiOptions(){
@@ -60,10 +63,10 @@ function controls(){
 function stop(message='停止しました。'){
   if(hasNative())nativeCall('cancelAI',{},1000).then(()=>refreshLocal()).catch(()=>{});
   ++generation;network?.stop();network=null;pairingUI?.stopScan();manualTurn=false;manualSending=false;agent?.stop();agent=null;link?.close();link=null;
-  virtualAgents.forEach(a=>a.stop());virtualAgents=[];audio?.stop();audio=null;testAbort?.abort();testAbort=null;busy=false;setAwake(false);$('level').value=0;experience?.finish();status(message);controls();
+  virtualAgents.forEach(a=>a.stop());virtualAgents=[];audio?.stop();audio=null;testAbort?.abort();testAbort=null;busy=false;setAwake(false);$('level').value=0;experience?.finish();status(message);feed?.send({kind:'stopped',message});feed?.stop();feed=null;controls();
 }
 function onLinkEvent(e){
-  experience?.record(e);
+  experience?.record(e);feed?.send({kind:'link',...e});
   if(e.kind==='transmit'){entry(network?'オンライン・モールス送信':'モールス送信',`ターン ${e.seq} · ${e.bytes} bytes${e.attempt?' · 再送':''}`);status(network?'オンライン送信 → 相手の受信確認待ち':'モールス送信 → 相手の受信確認待ち');}
   if(e.kind==='delivered'){entry('受信確認',`ターン ${e.seq} が相手に到達しました。`);status('受信確認済み。相手の応答を待っています。');}
   if(e.kind==='duplicate')entry('重複抑制',`ターン ${e.seq} は受信済み。AIには二重に渡しません。`);
@@ -72,9 +75,11 @@ function onLinkEvent(e){
 }
 function agentEvents(label,opts){return e=>{
   experience?.record({...e,sender:opts.sender});conversationUI?.event(e);
+  if(['thinking','inference-input','repairing','complete'].includes(e.kind))feed?.send({...e,role:opts.sender});
   if(e.kind==='thinking')status(`${label} が応答を生成中…`);
   if(e.kind==='repairing'){entry('送信前の再生成',`ターン ${e.seq} · ${e.reason}。文章はまだ送っていません。`);status('反復・空文・長さを検出。Gemmaが一度だけ生成し直しています…');}
   if(e.kind==='generated'){
+    feed?.send({kind:'generated',role:opts.sender,seq:e.seq,text:e.text,inferenceMs:e.inferenceMs,origin:e.origin});
     entry(e.origin==='human-seed'?`あなたの最初の話題 · ターン ${e.seq}`:e.origin==='human-topic'?`あなたの話題変更 · ターン ${e.seq}`:`${label} · ターン ${e.seq}`,e.text,'local');$('inference').textContent=`${(e.inferenceMs/1000).toFixed(2)} s`;
     const b=packFastFrame({...opts,sender:label.endsWith('B')?1:0,seq:e.seq,text:e.text});$('airtime').textContent=network?`${b.length} B · 音送信なし`:`${fastDuration(b,opts).toFixed(3)} s`;
   }
@@ -86,11 +91,14 @@ async function beginListening(){
   const opts=options(),invitation=pairingUI.get(),manual=$('dialogue-mode').value==='manual',cfg=manual?null:aiOptions();
   if(cfg?.provider==='litert'&&localState?.installed===false)throw new Error('先にGemmaモデルを取り込んでください。');
   busy=true;const epoch=++generation;experience.start(invitation?'online-encrypted-morse':'microphone');controls();
-  const engine=invitation?new OnlineTransport({invite:invitation,sender:opts.sender,onState:status}):new FastAudio(opts);
+  feed?.stop();feed=null;
+  if($('monitor-enable')?.checked){try{feed=new MonitorFeed($('monitor-url').value,{role:opts.sender,label:opts.sender?'B':'A'});feed.send({kind:'session',transport:invitation?'online':'acoustic',wpm:opts.wpm,room:opts.room,session:opts.session,mode:manual?'manual':'ai',maxTurns:opts.maxTurns,unitMs:Math.round(1200/opts.wpm*100)/100});}catch(err){entry('デモ監視',err.message);}}
+  const engine=invitation?new OnlineTransport({invite:invitation,sender:opts.sender,onState:status,telemetry:Boolean(feed)}):new FastAudio({...opts,telemetry:Boolean(feed)});
   if(invitation)network=engine;else audio=engine;
   try{
     const actual=await engine.start(e=>{
       if(epoch!==generation)return;
+      if(feed){if(e.kind==='tx')feedTx(e);else if(e.kind==='frame')feed.send({kind:'frame',frame:e.frame});else feed.send(e);}
       if(e.kind==='frame')link?.receive(e.frame).catch(err=>{if(epoch===generation)stop(err.message);});
       if(e.kind==='level')$('level').value=e.level;
       if(e.kind==='error')entry('受信診断',e.message);
@@ -118,12 +126,12 @@ function pcmChannel(bytes,opts){
 }
 async function selfTest(){
   const opts=options(),text=$('sample-text').value,b=packFastFrame({...opts,seq:1,text});
-  const rows=[];for(const wpm of [120,300,600,1200]){
+  const rows=[];for(const wpm of Object.values(FAST_PROFILES)){
     const {frame,seconds}=pcmChannel(b,{...opts,wpm});if(frame.text!==text)throw new Error('本文が一致しません。');rows.push(`${wpm} WPM: ${seconds.toFixed(3)}秒`);
   }
   let comparison='';try{const old=prepareMessage({text,room:opts.room,id:20260911,mode:'packet',wpm:40});comparison=` / 旧MT1・40 WPM: ${old.seconds.toFixed(3)}秒`;}catch{}
-  $('diagnostic').textContent=`4速度すべてPCM復元一致。${rows.join(' / ')}${comparison}。これは生成音の長さです。実機通信・AI推論・ACKの時間は含みません。`;
-  entry('通信自己診断 · AIなし',`「${text}」を4速度のPCMから復元。AIは呼び出していません。`);
+  $('diagnostic').textContent=`${Object.values(FAST_PROFILES).length}速度すべてPCM復元一致。${rows.join(' / ')}${comparison}。これは生成音の長さです。実機通信・AI推論・ACKの時間は含みません。`;
+  entry('通信自己診断 · AIなし',`「${text}」を${Object.values(FAST_PROFILES).length}速度のPCMから復元。AIは呼び出していません。`);
   status('通信自己診断に成功。実機の受信待機・AI推論は開始していません。');
   $('airtime').textContent=`${fastDuration(b,opts).toFixed(3)} s`;
 }

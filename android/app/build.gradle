@@ -9,15 +9,20 @@ android {
         minSdk 26
         targetSdk 35
         testInstrumentationRunner 'jp.morsetalk.app.SmokeInstrumentation'
-        versionCode 9
-        versionName '0.5.1'
+        versionCode 13
+        versionName '0.6.3'
+        if (project.hasProperty('targetAbi')) {
+            def selectedAbi=project.property('targetAbi').toString()
+            if (!(selectedAbi in ['arm64-v8a','x86_64'])) throw new GradleException('Unsupported targetAbi')
+            ndk { abiFilters selectedAbi }
+        }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
     // These are the very same modules used on Windows and in the Node tests.
-    sourceSets { main { assets.srcDirs = [file('../../app')] } }
+    sourceSets { main { assets.srcDirs = [file('../../app'),layout.buildDirectory.dir('signalAssets')] } }
     buildTypes {
         release { minifyEnabled false }
     }
@@ -26,3 +31,5 @@ android {
 }
 
 dependencies { implementation 'com.google.ai.edge.litertlm:litertlm-android:0.17.0' }
+tasks.register('copySignalAssets',Copy) { from('../../monitor'); into(layout.buildDirectory.dir('signalAssets/monitor')) }
+tasks.named('preBuild').configure { dependsOn('copySignalAssets') }

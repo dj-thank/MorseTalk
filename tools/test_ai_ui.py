@@ -19,7 +19,7 @@ with sync_playwright() as p:
     page.on('pageerror',lambda e:errors.append(str(e)));page.on('request',lambda r:requests.append(r.url));page.set_content(HTML)
     expect(page.locator('#listen')).to_be_enabled();expect(page.locator('#start')).to_be_disabled();expect(page.locator('#stop')).to_be_disabled();passed('Initial AI page idle; no automatic model, microphone or conversation start')
     page.locator('#test-ai').click();expect(page.locator('#status')).to_contain_text('許可');assert not requests;passed('AI consent is required before inference')
-    page.locator('#self-test').click();expect(page.locator('#diagnostic')).to_contain_text('4速度すべてPCM復元一致',timeout=10000);passed('Real bundled codec + PCM decoder roundtrip at 120/300/600/1200 WPM')
+    page.locator('#self-test').click();expect(page.locator('#diagnostic')).to_contain_text('5速度すべてPCM復元一致',timeout=10000);passed('Real bundled codec + PCM decoder roundtrip at 120/300/600/1200 WPM')
     page.locator('#sample-text').fill('<img src=x onerror="window.pwned=1">');page.locator('#self-test').click();expect(page.locator('#transcript')).to_contain_text('onerror');assert page.locator('#transcript img').count()==0;assert not page.evaluate('window.pwned || false');passed('Decoded content is rendered as inert text, not executable HTML')
     page.locator('#sample-text').fill('はい');page.locator('#speed').select_option('1200')
     with page.expect_download() as dl: page.locator('#export-fast').click()

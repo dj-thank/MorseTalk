@@ -60,7 +60,7 @@ export function replyIssue(text,history,maxBytes) {
   if(korean.test(text)&&!requested)return 'language';
   const norm=normalized(text);
   if(!norm)return 'empty';
-  if(/^(はい|うん|そうですね|そうだね|なるほど|わかりました|了解しました|ありがとうございます|ありがとう|いいですね|確かに|ok|yes|iagree)+$/.test(norm))return 'ack-only';
+  if(/^(はい|はいどうぞ|うん|こんにちは|よろしく|どうぞ|そうですね|そうだね|なるほど|わかりました|了解しました|ありがとうございます|ありがとう|いいですね|確かに|ok|yes|hello|iagree)+$/.test(norm))return 'ack-only';
   const own=history.filter(m=>m.role==='assistant').slice(-4);
   for(const m of own) {
     const before=normalized(m.content);

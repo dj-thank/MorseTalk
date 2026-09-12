@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0c1117">
+<title>MorseTalk · Signal Monitor</title><link rel="icon" href="monitor/icon.svg"><link rel="stylesheet" href="monitor/monitor.css"></head>
+<body><main class="deck">
+<header class="top">
+  <div class="brand"><span class="mark" aria-hidden="true"></span><div><h1>MorseTalk <span>SIGNAL MONITOR</span></h1><p>言葉が、信号になる。</p></div></div>
+  <div class="performance-controls">
+    <span id="session-state" class="session-state">待機</span>
+    <button id="sound" class="icon-button" type="button" aria-label="音を切り替える" aria-pressed="true"><span class="sound-icon">◖))</span><span id="sound-label">音あり</span></button>
+    <button id="sound-test" class="icon-button" type="button">音を確認</button>
+    <label class="volume-control"><span class="sr-only">音量</span><input id="volume" type="range" min="0" max="100" value="40" aria-label="音量"></label>
+    <button id="fullscreen" class="icon-button" type="button" aria-label="全画面">⛶</button>
+  </div>
+</header>
+
+<section class="conversation-bar" aria-label="会話を始める">
+  <div class="topic-field"><label for="topic">TOPIC</label><input id="topic" value="音楽で気分が変わるのはどうして？" maxlength="22" autocomplete="off" aria-label="話題"></div>
+  <select id="topic-preset" aria-label="話題を選ぶ"><option value="music">音楽</option><option value="food">料理</option><option value="science">宇宙</option><option value="creative">創作</option></select>
+  <select id="language" aria-label="会話の言語"><option value="ja">日本語</option><option value="en">English</option></select><label class="tempo-control"><input id="speed" type="number" min="0.1" step="1" value="60" aria-label="信号の速さ（WPM）"><span>WPM</span></label><button id="demo" class="start-button" type="button">▶ 会話をはじめる</button>
+  <button id="stop-live" class="icon-button" type="button" disabled>■ 停止</button>
+</section>
+<p id="session-error" class="session-error" role="alert" hidden></p>
+<section class="air" aria-label="電波・音のタイムライン">
+  <div class="air-head"><span class="eyebrow">SIGNAL FLOW <span class="flow-arrow">A ⟷ B</span></span><span id="air-meta" class="mono">— WPM · unit — ms</span></div>
+  <div class="flow-banner"><strong id="flow-main">話題を選んで、会話をはじめよう。</strong><span id="flow-peer">A ⟷ B</span></div>
+<canvas id="strip" height="150"></canvas>
+  <div class="lamps">
+    <div class="lamp" id="lamp-0"><div class="glow"></div><div class="face"><span class="who">A</span><span class="sym" id="sym-0">·</span></div><span class="lamp-label" id="lamp-label-0">待機</span></div>
+    <div class="now"><span id="now-mark" class="now-mark">—</span><span id="now-unit" class="mono">unit</span></div>
+    <div class="lamp" id="lamp-1"><div class="glow"></div><div class="face"><span class="who">B</span><span class="sym" id="sym-1">·</span></div><span class="lamp-label" id="lamp-label-1">待機</span></div>
+  </div>
+
+
+<section class="lanes">
+  <article class="lane" id="lane-0" data-role="0">
+    <div class="lane-head"><span class="who">A</span><h2>端末A</h2><span class="chip" id="chip-a"><i></i>待機</span><span class="dir" id="dir-0">待機</span><span class="mono stat" id="stat-0"></span></div>
+    <div class="activity" aria-label="端末Aの実行状態">
+      <div class="activity-head"><strong id="phase-0">未接続</strong><span id="inference-0" class="mono">—</span></div>
+      <div class="pipeline" id="pipeline-0"><span data-phase="receive">受信</span><span data-phase="think">推論</span><span data-phase="send">送信</span><span data-phase="ack">到達確認</span></div>
+      <div class="awareness" id="awareness-0"><div class="cognition-heading">推論</div><div class="cognition-row"><small>入力待ち</small><span>話題を受け取ると、理解と着眼点を表示します</span></div></div>
+    </div>
+    <div class="message-stage"><div class="message-heading"><span>メッセージ</span><span id="message-state-0">待機</span></div><div class="message-body row main" id="message-0" aria-label="端末Aのメッセージ"></div></div>
+    <details class="agent-detail"><summary>会話データ</summary>      <div class="context"><span class="context-label">受け取ったメッセージ</span><p id="input-0">相手の言葉を待っています</p></div>
+      <div class="utterance"><span class="context-label" id="output-label-0">返答</span><p id="output-0">—</p></div>
+
+    <div class="decode-head"><span>符号から文字へ</span><span id="replay-0">復号待ち</span></div>
+    <div class="stage"><span class="label">符号</span><div class="marks" id="marks-0"><span class="empty">· ─ ·</span></div></div>
+    <div class="stage"><span class="label">Base32</span><div class="letters mono" id="letters-0"></div></div>
+    <div class="stage text"><span class="label">復元</span>
+      <div class="rows">
+        <div class="row romaji mono" id="romaji-0"></div>
+
+        <div class="row main" id="text-0"><span class="caret"></span></div>
+
+      </div>
+    </div>
+    <div class="stage crc"><span class="label">検査</span><div class="crc-row" id="crc-0"><span class="pill">CRC32 待ち</span></div></div>
+    <details class="byte-detail"><summary>データを見る</summary><span class="context-meta mono" id="context-0">入力待ち</span><div class="row kana" id="kana-0"></div><div class="row guess" id="guess-0"></div>    <div class="stage"><span class="label">バイト</span><div class="bytes mono" id="bytes-0"></div><div class="header mono" id="header-0"></div></div>
+</details>
+    </details>
+  </article>
+  <article class="lane" id="lane-1" data-role="1">
+    <div class="lane-head"><span class="who">B</span><h2>端末B</h2><span class="chip" id="chip-b"><i></i>待機</span><span class="dir" id="dir-1">待機</span><span class="mono stat" id="stat-1"></span></div>
+    <div class="activity" aria-label="端末Bの実行状態">
+      <div class="activity-head"><strong id="phase-1">未接続</strong><span id="inference-1" class="mono">—</span></div>
+      <div class="pipeline" id="pipeline-1"><span data-phase="receive">受信</span><span data-phase="think">推論</span><span data-phase="send">送信</span><span data-phase="ack">到達確認</span></div>
+      <div class="awareness" id="awareness-1"><div class="cognition-heading">推論</div><div class="cognition-row"><small>入力待ち</small><span>話題を受け取ると、理解と着眼点を表示します</span></div></div>
+    </div>
+    <div class="message-stage"><div class="message-heading"><span>メッセージ</span><span id="message-state-1">待機</span></div><div class="message-body row main" id="message-1" aria-label="端末Bのメッセージ"></div></div>
+    <details class="agent-detail"><summary>会話データ</summary>      <div class="context"><span class="context-label">受け取ったメッセージ</span><p id="input-1">相手の言葉を待っています</p></div>
+      <div class="utterance"><span class="context-label" id="output-label-1">返答</span><p id="output-1">—</p></div>
+
+    <div class="decode-head"><span>符号から文字へ</span><span id="replay-1">復号待ち</span></div>
+    <div class="stage"><span class="label">符号</span><div class="marks" id="marks-1"><span class="empty">· ─ ·</span></div></div>
+    <div class="stage"><span class="label">Base32</span><div class="letters mono" id="letters-1"></div></div>
+    <div class="stage text"><span class="label">復元</span>
+      <div class="rows">
+        <div class="row romaji mono" id="romaji-1"></div>
+
+        <div class="row main" id="text-1"><span class="caret"></span></div>
+
+      </div>
+    </div>
+    <div class="stage crc"><span class="label">検査</span><div class="crc-row" id="crc-1"><span class="pill">CRC32 待ち</span></div></div>
+    <details class="byte-detail"><summary>データを見る</summary><span class="context-meta mono" id="context-1">入力待ち</span><div class="row kana" id="kana-1"></div><div class="row guess" id="guess-1"></div>    <div class="stage"><span class="label">バイト</span><div class="bytes mono" id="bytes-1"></div><div class="header mono" id="header-1"></div></div>
+</details>
+    </details>
+  </article>
+</section>
+</section>
+
+<details class="support"><summary>セッションの詳細 <span id="summary-turns">0 往復データ</span></summary>
+<details class="decode-details"><summary>信号の詳細</summary><section class="shared-decoder" aria-label="受信中の復元" data-role="1">
+  <div class="decoder-heading"><h2 id="decode-heading">信号から、言葉へ。</h2><span id="decode-stage">受信待ち</span></div>
+  <div class="character-flow"><div class="code-focus"><span class="mini-label">MORSE</span><strong id="decode-code">· — ·</strong></div><span class="transform-arrow">→</span><div class="letter-focus"><span class="mini-label" id="letter-label">ROMAJI</span><strong id="decode-letter">—</strong></div><span class="transform-arrow kana-arrow">→</span><div class="kana-focus"><span class="mini-label">かな</span><strong id="decode-kana">—</strong></div><div class="decode-count"><strong id="decode-progress">0</strong><span>文字を受信</span></div></div>
+  <div id="decode-letters" class="letters mono" aria-label="受信したアルファベット"></div>
+  <div class="decoded-message"><span class="mini-label" id="decode-text-stage">MESSAGE</span><div id="decode-output">—</div></div>
+  <div class="decode-footer"><span id="decode-check">受信待ち</span><span id="decode-bytes">—</span></div>
+</section></details><div class="technical-status"><span class="chip" id="chip-hub"><i></i>接続</span><span class="chip" id="chip-e2b"><i></i>読み補助</span><button id="clear" class="ghost" type="button">履歴をクリア</button></div><p class="source-note" id="source-note">端末の接続を待っています。波形は監視イベントに基づく表示です。</p><p class="method-note">この画面から開始した会話は、サーバー側の独立したA/Bワーカーで動きます。日本語では「WA TA SHI」のようなローマ字の読み、英語では英文そのものを欧文モールスで送ります。受信側がPCMを復号し、かな／英文を組み立て、その文をGemmaへ渡して返答を作ります。ヘッダーとCRCもモールス音で送り、検査が通った本文だけをLLMへ渡します。日本語は和文符号ではなく、ローマ字による表記です。画面の音はサーバーの送信信号と同じPCMです。物理マイクは使いません。外部端末の監視中は、その端末から届いたイベントを表示します。読み仮名・予想は補助情報です。</p><section class="bottom">
+  <div class="panel log"><div class="panel-head"><h3>会話</h3><span class="mono" id="turns">0 turns</span></div><div id="log" class="log-body"><p class="empty">会話をはじめると、ここに履歴が残ります。</p></div></div>
+  <div class="panel metrics"><div class="panel-head"><h3>回線</h3></div>
+    <dl class="kv">
+      <div><dt>速度</dt><dd id="m-wpm">—</dd></div><div><dt>1短点</dt><dd id="m-unit">—</dd></div><div><dt>経路</dt><dd id="m-transport">—</dd></div>
+      <div><dt>受信バイト</dt><dd id="m-bytes">0</dd></div><div><dt>圧縮</dt><dd id="m-comp">—</dd></div><div><dt>再送</dt><dd id="m-retry">0</dd></div>
+      <div><dt>直近ACK</dt><dd id="m-ack">—</dd></div><div><dt>E2B応答</dt><dd id="m-e2b">—</dd></div><div><dt>イベント</dt><dd id="m-events">0</dd></div>
+    </dl>
+  </div>
+  <div class="panel how"><div class="panel-head"><h3>いま起きていること</h3></div>
+    <ol class="steps" id="steps">
+      <li data-step="mark"><b>トン・ツー</b><span>受信波形の長さを測り、短点・長点に分ける</span></li>
+      <li data-step="letter"><b>符号 → 欧文</b><span>国際モールス表で受信した文字を一つずつ確定する</span></li>
+      <li data-step="byte"><b>ローマ字 → かな</b><span>N、NA、な、のようにメッセージ本文の同じ位置で組み立てる</span></li>
+      <li data-step="header"><b>送信者と順序</b><span>A / B、ターン番号、本文と受信確認を区別する</span></li>
+      <li data-step="text"><b>メッセージ</b><span>日本語はかな、英語は受信した英文として確定する</span></li>
+      <li data-step="crc"><b>CRC32 → AI</b><span>一致した本文だけを受信側のAIへ渡し、ACKを返す</span></li>
+    </ol>
+  </div>
+</section>
+</details>
+<footer class="foot"><span>MORSETALK</span><span id="foot-status" class="mono"></span></footer>
+</main>
+<script type="module" src="monitor/monitor.js"></script>
+</body></html>
