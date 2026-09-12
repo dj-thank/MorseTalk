@@ -27,6 +27,8 @@ async def main():
           if(own.node.textContent.includes('276E36C5'))throw Error('late ACK tail leaked into next bubble');
           chat.symbols('VVV');chat.symbols('B2= KA');chat.bind(1,2,'data');
           const next=chat.row(1,2,'data');
+          chat.symbols('TU N');
+          if(!next.node.textContent.includes('TU N'))throw Error('partial reset escaped active bubble');
           if(next.node.textContent.includes('276E36C5'))throw Error('previous packet inherited');
           chat.format(ack,'受信しました');chat.begin(0,2,'data');
           if(document.querySelectorAll('.chat-message').length!==3)throw Error('duplicate bubble');

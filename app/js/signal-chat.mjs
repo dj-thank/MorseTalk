@@ -29,7 +29,7 @@ export class SignalChat {
         row.signal=this.raw;this.raw.dataset.packet=`${row.sender}:${row.seq}:${row.type}`;
         row.node.insertBefore(this.raw,row.status);
       }
-    }else if(this.raw?.dataset.packet)this.raw=null;
+    }else if(this.raw?.dataset.packet&&this.current?.complete)this.raw=null;
     if(!this.raw){this.raw=document.createElement('div');this.raw.className='chat-signal';this.raw.textContent='受信中';this.root.append(this.raw);}
     const previous=this.raw.dataset.latest||'';
     if(previous&&!text.startsWith(previous.trimEnd()))this.raw.dataset.completed=(this.raw.dataset.completed||'')+previous+' ｜ ';
