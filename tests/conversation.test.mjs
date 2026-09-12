@@ -28,7 +28,7 @@ test('Invalid style fails before replacing receive handler',()=>{
   assert.throws(()=>new MorseAgent({link,style:'__proto__',generate:async()=>''}));assert.equal(link.onData,before);link.close();
 });
 test('Heuristic distinguishes a bare acknowledgement from substantive agreement',()=>{
-  for(const t of ['はい。','なるほど！','ありがとうございます。','  ','!?'])assert.ok(replyIssue(t,[],180),t);
+  for(const t of ['はい。','はいどうぞ','こんにちは','なるほど！','ありがとうございます。','  ','!?'])assert.ok(replyIssue(t,[],180),t);
   for(const t of ['はい、低い音を足すと落ち着くと思います。','なるほど、月の地下には何があるかな？','音楽の話をしよう。'])assert.equal(replyIssue(t,[],180),null,t);
 });
 test('Exact repeated own message is rejected; relevant short quotations are allowed',()=>{

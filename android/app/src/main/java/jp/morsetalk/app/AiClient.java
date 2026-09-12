@@ -47,7 +47,7 @@ final class AiClient {
         if (total > 24000) throw new IllegalArgumentException("履歴が長すぎます。");
         JSONObject request = new JSONObject().put("model", model).put("messages", clean).put("stream", false);
         if (provider.equals("ollama")) request.put("think", false).put("keep_alive", "10m").put("options", new JSONObject().put("num_predict", 96).put("num_ctx", 4096).put("temperature", .3));
-        else request.put("max_tokens", 96).put("temperature", .3);
+        else request.put("max_tokens", Math.max(32, Math.min(384, params.optInt("maxTokens",96)))).put("temperature", .3);
         byte[] body = request.toString().getBytes(StandardCharsets.UTF_8);
         if (body.length > 32768) throw new IllegalArgumentException("AIリクエストが大きすぎます。");
         busy = true;

@@ -161,7 +161,7 @@ public final class MainActivity extends Activity {
                 @Override public void onError(String id) { ui.post(() -> finishSpeak(id, "端末の読み上げに失敗しました。")); }
             });
         }));
-        web.loadUrl(ORIGIN + "/ai.html");
+        web.loadUrl(ORIGIN + (getIntent().getBooleanExtra("legacyAI",false)?"/ai.html":"/signal.html"));
     }
 
     private static String pageBase(String url) {
@@ -170,7 +170,7 @@ public final class MainActivity extends Activity {
         if (hash >= 0 && url.substring(hash + 1).matches("[A-Za-z][A-Za-z0-9_-]{0,79}")) return url.substring(0, hash);
         return url;
     }
-    private static boolean aiPage(String url) { return (ORIGIN + "/ai.html").equals(pageBase(url)); }
+    private static boolean aiPage(String url) { return (ORIGIN + "/ai.html").equals(pageBase(url)) || (ORIGIN + "/signal.html").equals(pageBase(url)); }
     private static boolean trustedPage(String url) {
         return (ORIGIN + "/index.html").equals(pageBase(url)) || aiPage(url);
     }
@@ -200,6 +200,7 @@ public final class MainActivity extends Activity {
             if (path == null || path.length() > 2048 || path.contains("\\") || path.indexOf('\0') >= 0) return response(400, "text/plain", new byte[0]);
             for (String part : path.split("/")) if (part.equals("..") || part.equals(".")) return response(400, "text/plain", new byte[0]);
             if (path.equals("/")) path = "/index.html";
+            if (path.startsWith("/app/core/")) path = path.substring(4);
             String mime;
             if (path.endsWith(".html")) mime = "text/html";
             else if (path.endsWith(".mjs") || path.endsWith(".js")) mime = "text/javascript";

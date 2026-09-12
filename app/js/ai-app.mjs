@@ -75,10 +75,11 @@ function onLinkEvent(e){
 }
 function agentEvents(label,opts){return e=>{
   experience?.record({...e,sender:opts.sender});conversationUI?.event(e);
+  if(['thinking','inference-input','repairing','complete'].includes(e.kind))feed?.send({...e,role:opts.sender});
   if(e.kind==='thinking')status(`${label} が応答を生成中…`);
   if(e.kind==='repairing'){entry('送信前の再生成',`ターン ${e.seq} · ${e.reason}。文章はまだ送っていません。`);status('反復・空文・長さを検出。Gemmaが一度だけ生成し直しています…');}
   if(e.kind==='generated'){
-    feed?.send({kind:'generated',seq:e.seq,text:e.text,inferenceMs:e.inferenceMs,origin:e.origin});
+    feed?.send({kind:'generated',role:opts.sender,seq:e.seq,text:e.text,inferenceMs:e.inferenceMs,origin:e.origin});
     entry(e.origin==='human-seed'?`あなたの最初の話題 · ターン ${e.seq}`:e.origin==='human-topic'?`あなたの話題変更 · ターン ${e.seq}`:`${label} · ターン ${e.seq}`,e.text,'local');$('inference').textContent=`${(e.inferenceMs/1000).toFixed(2)} s`;
     const b=packFastFrame({...opts,sender:label.endsWith('B')?1:0,seq:e.seq,text:e.text});$('airtime').textContent=network?`${b.length} B · 音送信なし`:`${fastDuration(b,opts).toFixed(3)} s`;
   }

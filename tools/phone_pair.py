@@ -44,7 +44,7 @@ class Phone:
         if monitor_port:
             adb(self.serial, 'reverse', f'tcp:{monitor_port}', f'tcp:{monitor_port}')
         adb(self.serial, 'shell', 'am', 'force-stop', PKG)
-        adb(self.serial, 'shell', 'am', 'start', '-n', f'{PKG}/.MainActivity')
+        adb(self.serial, 'shell', 'am', 'start', '-n', f'{PKG}/.MainActivity', '--ez', 'legacyAI', 'true')
         for _ in range(30):
             time.sleep(0.5)
             sock = re.search(r'@webview_devtools_remote_(\d+)', adb(self.serial, 'shell', 'cat', '/proc/net/unix'))

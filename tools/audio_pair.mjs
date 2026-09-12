@@ -6,7 +6,8 @@
 async (config) => {
   const {FastAudio} = await import('/js/fast-audio.mjs');
   const {ReliableMorseLink, MorseAgent} = await import('/core/fast-link.mjs');
-  const {fastDuration, unpackFastFrame} = await import('/core/fast-codec.mjs');
+  const {fastDuration, fastWire, unpackFastFrame} = await import('/core/fast-codec.mjs');
+  const {MonitorFeed} = await import('/js/monitor-feed.mjs');
   const {generateReply} = await import('/js/ai-client.mjs');
   const NativeContext = globalThis.AudioContext;
   const originalGetUserMedia = navigator.mediaDevices.getUserMedia;
@@ -15,13 +16,13 @@ async (config) => {
   const sinks = contexts.map(c => c.createMediaStreamDestination());
   const destinations = new Map(contexts.map((c,i) => [c, sinks[i]]));
   const options = {room:'0000',session:0x20260911,wpm:config.wpm || 1200,frequency:4000,volume:0.3};
-  const events=[], audio=[], links=[], agents=[], captures=[], transmissions=[];
+  const events=[], audio=[], links=[], agents=[], captures=[], transmissions=[],feeds=[];
   const started=performance.now();
   const result={ok:false, real_llm:config.realAI===true, physical_devices:false,
     transport:'real-time WebAudio MediaStream -> production AudioWorklet',
     microphone_source:'virtual cable (not physical microphone)',events,transmissions};
   let nextContext=0,nextMicrophone=0, fatal=null;
-  const event = (side,e) => {events.push({side,ms:performance.now()-started,...e}); if(e.kind==='error'||e.kind==='fatal')fatal=e.message;};
+  const event = (side,e) => {events.push({side,ms:performance.now()-started,...e});feeds[side]?.send(e); if(e.kind==='error'||e.kind==='fatal')fatal=e.message;};
   try {
     // Retain real AudioBuffer scheduling and receiver processing; reroute only endpoints.
     AudioNode.prototype.connect = function(destination,...args) {
@@ -34,9 +35,19 @@ async (config) => {
       const stream=sinks[1-nextMicrophone++].stream.clone();captures.push(stream);return stream;
     };
     for(let side=0;side<2;side++) {
+      if(config.monitorUrl){
+        feeds[side]=new MonitorFeed(config.monitorUrl,{role:side,label:'Virtual audio '+side});
+        feeds[side].send({kind:'session',transport:'acoustic',virtualAudio:true,wpm:options.wpm,unitMs:1200/options.wpm,room:options.room,session:options.session,mode:config.realAI?'ai':'manual',maxTurns:4});
+      }
       event(side,{kind:'audio-starting',options:structuredClone(options)});
-      const engine=new FastAudio(options);audio.push(engine);
+      const engine=new FastAudio({...options,telemetry:Boolean(config.monitorUrl)});audio.push(engine);
       const actual=await engine.start(e=>{
+        if(feeds[side]){
+          if(e.kind==='tx'){
+            const bytes=Uint8Array.from(e.bytes),frame=unpackFastFrame(bytes);
+            feeds[side].send({kind:'tx',seq:frame.seq,type:frame.type,text:frame.text,wire:fastWire(bytes),bytes:Array.from(bytes)});
+          }else feeds[side].send(e);
+        }
         if(e.kind==='frame') {
           event(side,{kind:'decoded',seq:e.frame.seq,type:e.frame.type,text:e.frame.text});
           links[side]?.receive(e.frame).catch(err=>{fatal=String(err);});
@@ -93,6 +104,7 @@ async (config) => {
     result.errorStack=e?.stack || null;
   } finally {
     agents.forEach(a=>a.stop());links.forEach(l=>l.close());audio.forEach(a=>a.stop());
+    feeds.forEach(f=>f.stop());
     globalThis.AudioContext=NativeContext;
     navigator.mediaDevices.getUserMedia=originalGetUserMedia;
     AudioNode.prototype.connect=originalConnect;

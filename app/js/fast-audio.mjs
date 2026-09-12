@@ -8,16 +8,17 @@ export class FastAudio {
     try{
       const Context=globalThis.AudioContext||globalThis.webkitAudioContext;
       if(!Context||!navigator.mediaDevices?.getUserMedia)throw new Error('マイクにはWindowsランチャーまたはAndroidアプリを使ってください。');
-      this.ctx=new Context({latencyHint:'interactive'});await this.ctx.resume();
+      this.ctx=new Context({latencyHint:'interactive',...(this.options.phonetic?{sampleRate:48000}:{})});await this.ctx.resume();
       if(this.closed||generation!==this.generation)throw new Error('開始をキャンセルしました。');
       if(!this.ctx.audioWorklet)throw new Error('AudioWorkletに対応したChrome / Edge / WebViewが必要です。');
-      url=globalThis.__FAST_WORKLET_SOURCE__?URL.createObjectURL(new Blob([globalThis.__FAST_WORKLET_SOURCE__],{type:'text/javascript'})):new URL('./fast-worklet.mjs',import.meta.url).href;
+      url=this.options.workletURL||(globalThis.__FAST_WORKLET_SOURCE__?URL.createObjectURL(new Blob([globalThis.__FAST_WORKLET_SOURCE__],{type:'text/javascript'})):new URL('./fast-worklet.mjs',import.meta.url).href);
       await this.ctx.audioWorklet.addModule(url);
       if(this.closed||generation!==this.generation)throw new Error('開始をキャンセルしました。');
       const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
       if(this.closed||generation!==this.generation){stream.getTracks().forEach(t=>t.stop());throw new Error('開始をキャンセルしました。');}
       this.stream=stream;this.source=this.ctx.createMediaStreamSource(stream);
-      this.node=new AudioWorkletNode(this.ctx,'morsetalk-fast-input',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],processorOptions:this.options});
+      const {pcmFactory,workletURL,...processorOptions}=this.options;
+      this.node=new AudioWorkletNode(this.ctx,'morsetalk-fast-input',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],processorOptions});
       this.mute=this.ctx.createGain();this.mute.gain.value=0;
       this.source.connect(this.node);this.node.connect(this.mute);this.mute.connect(this.ctx.destination);
       this.node.port.onmessage=e=>{if(!this.closed&&generation===this.generation)onEvent(e.data);};
@@ -37,7 +38,7 @@ export class FastAudio {
     if(this.closed||!this.node)throw new Error('先に受信待機を開始してください。');
     if(this.job)throw new Error('音声送信が重複しました。');
     const generation=this.generation,ctx=this.ctx;
-    const {pcm,sampleRate}=fastPcm(bytes,{...this.options,sampleRate:ctx.sampleRate});
+    const {pcm,sampleRate}=(this.options.pcmFactory||fastPcm)(bytes,{...this.options,sampleRate:ctx.sampleRate});
     const buffer=ctx.createBuffer(1,pcm.length,sampleRate);buffer.copyToChannel(pcm,0);
     if(this.options.telemetry){try{this.onEvent?.({kind:'tx',bytes:Array.from(bytes),seconds:pcm.length/sampleRate});}catch{}}
     const source=ctx.createBufferSource();source.buffer=buffer;source.connect(ctx.destination);

@@ -2,6 +2,17 @@ import test from 'node:test';import assert from 'node:assert/strict';
 import {ReliableMorseLink,MorseAgent} from '../app/core/fast-link.mjs';
 import {unpackFastFrame,fastPcm,FastMorseDecoder,packFastFrame} from '../app/core/fast-codec.mjs';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+test('Continuous agents pass 32 turns, bound memory, and stop explicitly',async()=>{
+ const {links}=pair();let turns=0;const agents=links.map(link=>new MorseAgent({link,maxTurns:0,generate:async()=>`検証 ${++turns} の内容`,onEvent:e=>{if(e.kind==='generated'&&turns>=40)agents.forEach(a=>a.stop());}}));
+ await agents[0].start('続ける');for(let n=0;n<500&&agents.some(a=>a.active);n++)await sleep(10);
+ assert.ok(turns>=40);assert.ok(agents.every(a=>!a.active&&a.history.length<=25));
+});
+test('Continuous link preserves alternating order across the wire sequence rollover',async()=>{
+ const {links,received}=pair();links.forEach(l=>l.continuous=true);
+ links[0].nextSend=65533;links[1].nextReceive=65533;links[1].nextSend=65534;links[0].nextReceive=65534;
+ await links[0].send('末尾A',65533);await links[1].send('末尾B',65534);await links[0].send('次のA',1);await links[1].send('次のB',2);
+ assert.deepEqual(received[0].map(f=>f.seq),[65534,2]);assert.deepEqual(received[1].map(f=>f.seq),[65533,1]);links.forEach(l=>l.close());
+});
 function pair({dropAck=false,pcm=false}={}){
  const events=[],received=[[],[]];let links;
  const send=sender=>async bytes=>{
@@ -12,7 +23,9 @@ function pair({dropAck=false,pcm=false}={}){
   // Audio TX does not synchronously await the peer's application/reply.
   setTimeout(()=>{links[1-sender].receive(decoded);},0);
  };
- links=[0,1].map(sender=>new ReliableMorseLink({room:'1234',session:99,sender,sendAudio:send(sender),ackDelayMs:0,ackTimeoutMs:30,maxRetries:1,onData:f=>{received[sender].push(f);},onEvent:e=>events.push({sender,...e})}));
+ // Three asynchronous hops can exceed 30 ms with the Windows timer resolution.
+ // Keep this above scheduler jitter; the test still drops the first ACK explicitly.
+ links=[0,1].map(sender=>new ReliableMorseLink({room:'1234',session:99,sender,sendAudio:send(sender),ackDelayMs:0,ackTimeoutMs:150,maxRetries:1,onData:f=>{received[sender].push(f);},onEvent:e=>events.push({sender,...e})}));
  return {links,events,received};
 }
 test('lost ACK retries once, but application sees the data exactly once',async()=>{const {links,received,events}=pair({dropAck:true});const r=await links[0].send('こんにちは',1);assert.equal(r.attempts,2);assert.equal(received[1].length,1);assert.ok(events.some(e=>e.kind==='duplicate'));links.forEach(l=>l.close());});
