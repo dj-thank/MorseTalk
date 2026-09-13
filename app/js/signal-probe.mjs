@@ -11,7 +11,7 @@ export async function createSignalProbe({role,frequency,volume=20,wpm=20,session
  if(![0,1].includes(role)||![1800,18000,19000,20000,21000,22000].includes(frequency)||![20,40,60].includes(volume))throw Error('試験設定が不正です');
  const events=[];let closed=false;
  const record=e=>{events.push({t:Date.now(),...e});if(events.length>6000)events.shift();};
- const options={wpm,frequency,highFrequency:frequency>4000,volume:volume*.008,sampleRate:48000,acoustic:true};
+ const options={wpm,frequency,highFrequency:frequency>4000,diagnostics:true,volume:volume*.008,sampleRate:48000,acoustic:true};
  const ack=kanaToWire('じゅしんしました');
  const audio=new FastAudio({...options,phonetic:true,workletURL:new URL('./phonetic-worklet.mjs',import.meta.url).href,pcmFactory:(wire,o)=>phoneticPcm(wire,o)});
  const link=new ReliableMorseLink({sender:role,room:'0000',session,continuous:true,ackDelayMs:300,ackTimeoutMs:Math.ceil(phoneticPcm(packPhonetic({sender:role,seq:1,type:'ack',wire:ack.wire}),options).seconds*1000+12000),onEvent:record,

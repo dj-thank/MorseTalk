@@ -38,3 +38,10 @@ test('Sensitive high-frequency detector never delivers background noise as a mes
  for(let i=0;i<pcm.length;i++){seed=(Math.imul(seed,1664525)+1013904223)>>>0;pcm[i]=.003*(seed/2**31-1);}
  receiver.push(pcm);assert.equal(frames.length,0);
 });
+test('Calibration observes every production detector without changing frame deduplication',()=>{
+ const profiles=new Set(),frames=[];
+ const opts={frequency:19000,highFrequency:true,wpm:20,acoustic:true};
+ const receiver=new AcousticReceiver({...opts,onCandidateSymbols:e=>profiles.add(e.decoderProfile),onFrame:f=>frames.push(f)});
+ receiver.push(phoneticPcm(packPhonetic({sender:0,seq:1,wire:'NA'}),opts).pcm);
+ assert.equal(profiles.size,6);assert.equal(frames.length,1);assert.equal(frames[0].text,'な');
+});

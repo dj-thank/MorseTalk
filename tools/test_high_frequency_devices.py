@@ -38,7 +38,7 @@ async def run(args):
     if args.a==args.b:raise ValueError('別々の端末を指定してください')
     phones=[Phone(args.a,19391),Phone(args.b,19392)]
     out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
-    report={'owner':'MorseTalk high-frequency test','pid':os.getpid(),'started':time.time(),'devices':[args.a,args.b],'wpm':20,'audibility':'not yet reported','measurements':[]}
+    report={'status':'RUNNING','owner':'MorseTalk high-frequency test','pid':os.getpid(),'started':time.time(),'devices':[args.a,args.b],'wpm':20,'audibility':'recorded separately from user report','measurements':[]}
     def save():(out/'sweep.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     try:
         for p in phones:await p.prepare()
@@ -59,8 +59,9 @@ async def run(args):
                         signal=percentile([e['amplitude'] for e in levels],.9)
                         noise=percentile([e['amplitude'] for e in baseline if e['kind']=='level'],.95)
                         clipped=max((e['clippedFraction'] for e in levels),default=0)
-                        symbols=[e['text'] for e in observed if e['kind']=='symbols']
-                        result={'sender':sender,'trial':trial+1,'amplitude':signal,'noiseAmplitude':noise,'marginDb':20*math.log10(max(signal,1e-9)/max(noise,1e-9)),'clippedFraction':clipped,'pilotDecoded':any('VVV' in s for s in symbols),'symbols':symbols}
+                        symbols=sorted(set(e['text'] for e in observed if e['kind'] in ['symbols','candidate-symbols']))
+                        profiles=sorted(set(e['decoderProfile'] for e in observed if e['kind']=='candidate-symbols' and 'VVV' in e['text']))
+                        result={'sender':sender,'trial':trial+1,'amplitude':signal,'noiseAmplitude':noise,'marginDb':20*math.log10(max(signal,1e-9)/max(noise,1e-9)),'clippedFraction':clipped,'pilotDecoded':bool(profiles),'decodingProfiles':profiles,'symbols':symbols}
                         trials.append(result);print(json.dumps({'frequency':frequency,'volume':volume,**result},ensure_ascii=False),flush=True)
                 threshold=.0002 if frequency>4000 else .004
                 passed=all(sum(t['pilotDecoded'] and t['amplitude']>=threshold and t['marginDb']>=10 and t['clippedFraction']==0 for t in trials if t['sender']==sender)>=2 for sender in [0,1])
@@ -68,8 +69,9 @@ async def run(args):
                 for p in phones:await p.stop()
                 if passed:break
         candidates=sorted([m for m in report['measurements'] if m['candidate']],key=lambda m:(m['worstMarginDb'],m['frequency']),reverse=True)[:2]
-        report['candidates']=[{'frequency':m['frequency'],'volume':m['volume']} for m in candidates];save()
+        report['status']='COMPLETE';report['candidates']=[{'frequency':m['frequency'],'volume':m['volume']} for m in candidates];save()
         print('CANDIDATES '+json.dumps(report['candidates']),flush=True)
+    except Exception as e:report['status']='ERROR';report['error']=str(e);save();raise
     finally:
         for p in phones:
             if hasattr(p,'url'):

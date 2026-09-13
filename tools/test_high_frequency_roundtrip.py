@@ -4,6 +4,7 @@ from pathlib import Path
 from test_high_frequency_devices import Phone
 
 async def run(args):
+    if args.a==args.b:raise ValueError('別々の2台が必要です')
     phones=[Phone(args.a,19391),Phone(args.b,19392)];out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
     report={'frequency':args.frequency,'volume':args.volume,'wpm':20,'started':time.time(),'trials':[],'status':'RUNNING'}
     def save():(out/'roundtrip.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -27,6 +28,7 @@ async def run(args):
             for p in phones:await p.stop()
         report['directions']=[{'sender':i,'firstAttempt':sum(t['delivered'] and t['attempts']==1 for t in report['trials'] if t['sender']==i),'delivered':sum(t['delivered'] for t in report['trials'] if t['sender']==i)} for i in [0,1]]
         report['status']='PASS' if all(d['firstAttempt']>=9 and d['delivered']==10 for d in report['directions']) else 'FAIL';save();print(json.dumps(report['directions']),report['status'],flush=True)
+    except Exception as e:report['status']='ERROR';report['error']=str(e);save();raise
     finally:
         for p in phones:
             if hasattr(p,'url'):

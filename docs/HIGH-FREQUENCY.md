@@ -19,8 +19,9 @@ Android 0.6.4のSignalでは、1.8 kHzに加えて18・19・20・21・22 kHzを�
 ```sh
 python tools/test_high_frequency_devices.py --a SERIAL_A --b SERIAL_B --output test-results/high-frequency
 python tools/test_high_frequency_roundtrip.py --a SERIAL_A --b SERIAL_B --frequency FREQUENCY_HZ --volume APP_VOLUME --output test-results/high-frequency-roundtrip
+python tools/test_high_frequency_conversation.py --a SERIAL_A --b SERIAL_B --frequency FREQUENCY_HZ --volume APP_VOLUME --output test-results/high-frequency-conversation
 ```
 
-帯域測定は20 WPMで各方向3回、音量20%から始め、条件を満たさなければ40%、60%を試します。各方向2/3以上でVVVを検出し、受信振幅が0.0002以上、測定した雑音との差が10 dB以上、クリッピングなしを候補条件とします。両方向を満たした帯域から、最小受信余裕が大きい順に最大2候補を選びます。同点なら高い帯域を優先します。
+帯域測定は20 WPMで各方向3回、音量20%から始め、条件を満たさなければ40%、60%を試します。本番と同じ6つの検出条件を使い、各方向2/3以上でいずれかの受信器がVVVを検出し、受信振幅が0.0002以上、測定した雑音との差が10 dB以上、クリッピングなしを候補条件とします。両方向を満たした帯域から、最小受信余裕が大きい順に最大2候補を選びます。同点なら高い帯域を優先します。
 
 本文試験は各方向10回。初回9/10以上、再送込み10/10、ACK内容一致、重複配送なしを要求します。合格した帯域だけで実Gemmaの10ターン会話を確認します。全候補が不合格なら、推奨高周波なしとして1.8 kHzを維持します。
