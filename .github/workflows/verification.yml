@@ -37,6 +37,7 @@ jobs:
         run: |
           python tools/test_ai_ui.py
           python tools/test_ui_inmemory.py
+          python tools/test_signal_frequency_ui.py
       - run: python tools/test_qr_ui.py
       - run: python tools/test_pc_android_ui.py
       - run: python tools/test_online_browser.py

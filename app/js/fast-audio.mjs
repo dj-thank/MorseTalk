@@ -1,3 +1,4 @@
+import {validateTiming} from '../core/morse.mjs';
 import { fastPcm } from '../core/fast-codec.mjs';
 /** Reserve the microphone once, mute decoding during TX, keep it open between turns. */
 export class FastAudio {
@@ -8,8 +9,9 @@ export class FastAudio {
     try{
       const Context=globalThis.AudioContext||globalThis.webkitAudioContext;
       if(!Context||!navigator.mediaDevices?.getUserMedia)throw new Error('マイクにはWindowsランチャーまたはAndroidアプリを使ってください。');
-      this.ctx=new Context({latencyHint:'interactive',...(this.options.phonetic?{sampleRate:48000}:{})});await this.ctx.resume();
+      this.ctx=new Context({latencyHint:'interactive',...(this.options.phonetic?{sampleRate:this.options.sampleRate??48000}:{})});await this.ctx.resume();
       if(this.closed||generation!==this.generation)throw new Error('開始をキャンセルしました。');
+      if(this.options.phonetic)validateTiming({...this.options,experimental:true,sampleRate:this.ctx.sampleRate});
       if(!this.ctx.audioWorklet)throw new Error('AudioWorkletに対応したChrome / Edge / WebViewが必要です。');
       url=this.options.workletURL||(globalThis.__FAST_WORKLET_SOURCE__?URL.createObjectURL(new Blob([globalThis.__FAST_WORKLET_SOURCE__],{type:'text/javascript'})):new URL('./fast-worklet.mjs',import.meta.url).href);
       await this.ctx.audioWorklet.addModule(url);
@@ -18,6 +20,9 @@ export class FastAudio {
       if(this.closed||generation!==this.generation){stream.getTracks().forEach(t=>t.stop());throw new Error('開始をキャンセルしました。');}
       this.stream=stream;this.source=this.ctx.createMediaStreamSource(stream);
       const {pcmFactory,workletURL,...processorOptions}=this.options;
+      processorOptions.sampleRate=this.ctx.sampleRate;
+      const settings=stream.getTracks()[0]?.getSettings?.()||{};
+      this.recordingSettings=Object.fromEntries(['sampleRate','channelCount','echoCancellation','noiseSuppression','autoGainControl','latency'].filter(k=>settings[k]!==undefined).map(k=>[k,settings[k]]));
       this.node=new AudioWorkletNode(this.ctx,'morsetalk-fast-input',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],processorOptions});
       this.mute=this.ctx.createGain();this.mute.gain.value=0;
       this.source.connect(this.node);this.node.connect(this.mute);this.mute.connect(this.ctx.destination);
@@ -30,7 +35,7 @@ export class FastAudio {
       };
       this.node.onprocessorerror=()=>fatal('音響処理が停止しました。');
       for(const track of stream.getTracks())track.onended=()=>fatal('マイクが切断されました。');
-      return {sampleRate:this.ctx.sampleRate,baseLatency:this.ctx.baseLatency,outputLatency:this.ctx.outputLatency};
+      return {recordingSettings:this.recordingSettings,sampleRate:this.ctx.sampleRate,baseLatency:this.ctx.baseLatency,outputLatency:this.ctx.outputLatency};
     }catch(e){if(generation===this.generation)this.stop();throw e;}
     finally{if(url?.startsWith('blob:'))URL.revokeObjectURL(url);}
   }

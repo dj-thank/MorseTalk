@@ -3,6 +3,15 @@ import assert from 'node:assert/strict';
 import {FastAudio} from '../app/js/fast-audio.mjs';
 import {packFastFrame} from '../app/core/fast-codec.mjs';
 const bytes=packFastFrame({session:10,sender:0,seq:1,text:'はい'});
+test('Phonetic receiver forwards actual context rate and non-identifying microphone settings',async()=>{
+ const e=install(),a=new FastAudio({phonetic:true,frequency:19000,highFrequency:true,sampleRate:48000});
+ e.sampleRate=44100;e.track.getSettings=()=>({sampleRate:44100,deviceId:'private',channelCount:1,echoCancellation:false});
+ try{const info=await a.start(()=>{});assert.equal(e.processorOptions.sampleRate,44100);assert.equal(info.recordingSettings.sampleRate,44100);assert.equal(info.recordingSettings.deviceId,undefined);}finally{a.stop();e.restore();}
+});
+test('Unsupported actual audio rate rejects high frequency before microphone acquisition',async()=>{
+ const e=install(),a=new FastAudio({phonetic:true,frequency:19000,highFrequency:true});e.sampleRate=32000;
+ try{await assert.rejects(a.start(()=>{}),/サンプルレート/);assert.equal(e.micCalls,0);assert.equal(a.closed,true);}finally{a.stop();e.restore();}
+});
 test('Playback observer receives the audio clock only after the source starts',async()=>{
  const e=install(),a=new FastAudio({wpm:1200});
  try{await a.start(()=>{});a.ctx.currentTime=12;let called=0;
@@ -15,8 +24,8 @@ function install(){
  const env={events:[],contexts:[],micCalls:0};
  env.track={stop(){env.events.push('track-stop');},onended:null};env.stream={getTracks:()=>[env.track]};
  const connectable=()=>({connect(){},disconnect(){env.events.push('disconnect');}});
- class Context{constructor(){this.sampleRate=48000;this.currentTime=0;this.state='running';this.destination={};this.audioWorklet={addModule:async()=>{}};env.contexts.push(this);}async resume(){}createMediaStreamSource(){return connectable();}createGain(){return{...connectable(),gain:{value:1}};}createBuffer(){return{copyToChannel(){}};}createBufferSource(){const s={...connectable(),start(){env.events.push('tx-start');if(env.autoEnd!==false)setTimeout(()=>s.onended?.(),1);},stop(){env.events.push('tx-stop');s.onended?.();}};return s;}async close(){this.state='closed';env.events.push('context-close');}}
- class Node{constructor(){Object.assign(this,connectable());this.port={postMessage:m=>env.events.push(m.kind==='mute'?`mute-${m.value}`:m.kind),onmessage:null};}}
+ class Context{constructor(){this.sampleRate=env.sampleRate??48000;this.currentTime=0;this.state='running';this.destination={};this.audioWorklet={addModule:async()=>{}};env.contexts.push(this);}async resume(){}createMediaStreamSource(){return connectable();}createGain(){return{...connectable(),gain:{value:1}};}createBuffer(){return{copyToChannel(){}};}createBufferSource(){const s={...connectable(),start(){env.events.push('tx-start');if(env.autoEnd!==false)setTimeout(()=>s.onended?.(),1);},stop(){env.events.push('tx-stop');s.onended?.();}};return s;}async close(){this.state='closed';env.events.push('context-close');}}
+ class Node{constructor(context,name,options){env.processorOptions=options.processorOptions;Object.assign(this,connectable());this.port={postMessage:m=>env.events.push(m.kind==='mute'?`mute-${m.value}`:m.kind),onmessage:null};}}
  Object.defineProperty(globalThis,'navigator',{value:{mediaDevices:{getUserMedia:async()=>{env.micCalls++;return env.pendingMic?await env.pendingMic:env.stream;}}},configurable:true});
  Object.defineProperty(globalThis,'AudioContext',{value:Context,configurable:true});Object.defineProperty(globalThis,'AudioWorkletNode',{value:Node,configurable:true});
  env.restore=()=>{for(const k of names){if(old[k])Object.defineProperty(globalThis,k,old[k]);else delete globalThis[k];}};return env;
