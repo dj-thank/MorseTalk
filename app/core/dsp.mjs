@@ -50,10 +50,10 @@ export class PulseDecoder {
   }
 }
 export class ToneDetector {
-  constructor({sampleRate=48000,frequency=700,wpm=40,mode='international',threshold=0.012,onMessage,onUpdate,onLevel=()=>{},onError,experimental=false,adaptive=false,windowMs=null,peakRatio=.12,purityGate=.05,releaseBlocks=1}={}) {
-    validateTiming({frequency,wpm,experimental});
+  constructor({sampleRate=48000,frequency=700,wpm=40,mode='international',threshold=0.012,onMessage,onUpdate,onLevel=()=>{},onError,experimental=false,highFrequency=false,adaptive=false,windowMs=null,peakRatio=.12,purityGate=.05,releaseBlocks=1}={}) {
+    validateTiming({frequency,wpm,experimental,highFrequency,sampleRate});
     if(!Number.isFinite(sampleRate)||sampleRate<8000||sampleRate>96000)throw new Error('サンプルレートが不正です。');
-    if(!Number.isFinite(threshold)||threshold<0.002||threshold>0.2)throw new Error('感度が不正です。');
+    if(!Number.isFinite(threshold)||threshold<(highFrequency?.00002:.002)||threshold>0.2)throw new Error('感度が不正です。');
     windowMs??=adaptive?10:5;
     if(!Number.isFinite(windowMs)||windowMs<2||windowMs>20||!Number.isFinite(peakRatio)||peakRatio<0||peakRatio>1||!Number.isFinite(purityGate)||purityGate<0||purityGate>1||![1,2,3,4].includes(releaseBlocks))throw Error('検出条件が不正です。');
     this.peakRatio=peakRatio;this.purityGate=purityGate;this.releaseBlocks=releaseBlocks;
@@ -72,9 +72,9 @@ export class ToneDetector {
     }
   }
   analyze() {
-    let re=0,im=0,energy=0,mean=0;
+    let re=0,im=0,energy=0,mean=0,peak=0,clipped=0;
     for(let i=0;i<this.size;i++)mean+=this.buffer[i];mean/=this.size;
-    for(let i=0;i<this.size;i++){const x=this.buffer[i]-mean;re+=x*this.cos[i];im+=x*this.sin[i];energy+=x*x;}
+    for(let i=0;i<this.size;i++){const value=this.buffer[i],x=value-mean;peak=Math.max(peak,Math.abs(value));if(Math.abs(value)>=.99)clipped++;re+=x*this.cos[i];im+=x*this.sin[i];energy+=x*x;}
     const amplitude=2*Math.hypot(re,im)/this.size;
     const rms=Math.sqrt(energy/this.size);
     const purity=Math.min(1,amplitude*amplitude/(2*rms*rms+1e-15));
@@ -84,7 +84,8 @@ export class ToneDetector {
     if(detected!==this.candidate){this.candidate=detected;this.dwell=1;}else this.dwell++;
     if(this.dwell>=(this.adaptive&&this.on?this.releaseBlocks:2))this.on=detected;
     this.decoder.feed(this.on,1000*this.size/this.sampleRate);
-    if(++this.blocks%10===0)this.onLevel({amplitude,rms,purity,on:this.on});
+    this.measuredPeak=Math.max(this.measuredPeak||0,peak);this.clippedSamples=(this.clippedSamples||0)+clipped;
+    if(++this.blocks%10===0){this.onLevel({amplitude,rms,purity,on:this.on,peak:this.measuredPeak,clippedFraction:this.clippedSamples/(this.size*10)});this.measuredPeak=0;this.clippedSamples=0;}
   }
   flush(){this.decoder.flush();}
   reset(){this.offset=0;this.on=false;this.candidate=false;this.dwell=0;this.decoder.reset();}

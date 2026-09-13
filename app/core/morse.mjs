@@ -75,9 +75,11 @@ export function decodeCode(code, mode = 'international', { strict = true } = {})
   if (strict && unknown.length) throw new Error(`不明な符号：${[...new Set(unknown)].join(' ')}。方式と文字の区切りを確認してください。`);
   return { text, unknown };
 }
-export function validateTiming({wpm = 40, frequency = 700, volume = 0.25, experimental = false} = {}) {
+export function validateTiming({wpm = 40, frequency = 700, volume = 0.25, experimental = false, highFrequency = false, sampleRate = 48000} = {}) {
   if (!Number.isFinite(wpm) || wpm <= 0 || !Number.isFinite(1.2/wpm) || (!experimental && (wpm < 8 || wpm > 60))) throw new Error(experimental?'速度は0より大きい有限のWPMにしてください。':'速度は8〜60 WPMにしてください。');
-  if (!Number.isFinite(frequency) || frequency < 400 || frequency > (experimental?4000:1200)) throw new Error(experimental?'周波数は400〜4000 Hzにしてください。':'周波数は400〜1200 Hzにしてください。');
+  const maximum=experimental&&highFrequency?22000:experimental?4000:1200;
+  if (!Number.isFinite(frequency) || frequency < 400 || frequency > maximum) throw new Error(`周波数は400〜${maximum} Hzにしてください。高周波には実験設定が必要です。`);
+  if (!Number.isFinite(sampleRate)||sampleRate<8000||sampleRate>96000||frequency>=sampleRate/2) throw new Error(`周波数 ${frequency} Hz は処理サンプルレート ${sampleRate} Hzに対応していません。`);
   if (!Number.isFinite(volume) || volume < 0 || volume > 0.8) throw new Error('音量は0〜0.8の範囲です。');
   return {wpm, frequency, volume, unit: 1.2 / wpm};
 }
@@ -106,8 +108,8 @@ export function codeToSegments(code, wpm = 40, { leadUnits = 7, tailUnits = 18, 
 }
 export function durationOf(segments) { return segments.reduce((n,s) => n+s.seconds,0); }
 /** Bounded PCM generator for tests and WAV export. Playback itself is streamed. */
-export function synthesize(segments, { sampleRate = 16000, frequency = 700, volume = 0.25, maxSeconds = 600, experimental = false } = {}) {
-  validateTiming({ frequency, volume, experimental });
+export function synthesize(segments, { sampleRate = 16000, frequency = 700, volume = 0.25, maxSeconds = 600, experimental = false, highFrequency = false } = {}) {
+  validateTiming({ frequency, volume, experimental, highFrequency, sampleRate });
   const duration = durationOf(segments);
   if (!Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 96000 || duration > maxSeconds) throw new Error('音声データが大きすぎるか、サンプルレートが不正です。');
   const pcm = new Float32Array(Math.ceil(duration * sampleRate));

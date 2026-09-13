@@ -12,7 +12,7 @@ const $=id=>document.getElementById(id),messages=[0,1].map(i=>new InlineMessage(
 const acknowledgements=[0,1].map(i=>new AckMessage($('message-'+i)));let txKind=null,rxKind=null,txAttempt=0;
 const chat=new SignalChat($('chat'));
 const ackPayload=kanaToWire('じゅしんしました');
-const settings=['role','speed','volume','topic'];
+const settings=['role','speed','volume','topic','frequency'];
 for(const id of settings){try{const value=localStorage.getItem('signal-'+id);if(value!==null)$(id).value=value;}catch{}}
 let audio,link,agent,rpc,role=0,epoch=0,rid=0,rxSeq=null;const pending=new Map(),readings=new Map(),events=[],logRows=new Map();
 const colors=['#f5b942','#5fe0b0'];let bars=[];
@@ -23,7 +23,7 @@ globalThis.morsetalkSignalSnapshot=()=>({events:[...events],active:!!agent?.acti
 function mark(sender,on,units){if(!on)return;bars.push({t:performance.now(),sender,units});if(bars.length>100)bars.shift();const kind=sender===role?txKind:rxKind;$('channel').textContent=`${sender?'B':'A'} · ${kind==='ack'?'受信確認（ACK）':kind==='checksum'?'検査信号':kind==='data'?'メッセージ':'受信信号'} · ${units>=2?'─':'·'}`;}
 function draw(){const canvas=$('strip'),ctx=canvas.getContext('2d'),w=canvas.width=canvas.clientWidth,h=canvas.height=80;ctx.clearRect(0,0,w,h);const now=performance.now();for(const b of bars){const x=w-(now-b.t)*.09;if(x<0)continue;ctx.fillStyle=colors[b.sender];ctx.fillRect(x,b.sender?48:12,Math.max(3,b.units*5),15);}requestAnimationFrame(draw);}draw();
 function append(sender,text,seq){const key=`${epoch}:${sender}:${seq}`;let p=logRows.get(key);if(!p){p=document.createElement('p');logRows.set(key,p);$('log').append(p);}p.textContent=`${sender?'B':'A'} · ${text}`;while(logRows.size>60){const first=logRows.keys().next().value;logRows.get(first).remove();logRows.delete(first);}}
-function stop(error){chat.stop();++epoch;agent?.stop();agent=null;link?.close();link=null;audio?.stop();audio=null;rpc?.close();rpc=null;for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('停止'));}pending.clear();nativeCall('cancelAI',{},1000).catch(()=>{});setAwake(false);$('state').textContent='停止';$('listen').disabled=false;$('start').disabled=true;$('stop').disabled=true;for(const id of ['role','speed','topic'])$(id).disabled=false;if($('phase-'+role).textContent==='推論中')$('thought-'+role).textContent='返答の生成を停止しました';phase(role,'停止');phase(1-role,'受信終了');for(const i of [0,1]){if(/^(送信中|受信中)$/.test($('delivery-'+i).textContent))$('delivery-'+i).textContent='停止';}if(error){$('error').hidden=false;$('error').textContent=error.message||String(error);}event({kind:'stopped',error:error?.message});}
+function stop(error){chat.stop();++epoch;agent?.stop();agent=null;link?.close();link=null;audio?.stop();audio=null;rpc?.close();rpc=null;for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('停止'));}pending.clear();nativeCall('cancelAI',{},1000).catch(()=>{});setAwake(false);$('state').textContent='停止';$('listen').disabled=false;$('start').disabled=true;$('stop').disabled=true;for(const id of ['role','speed','topic','frequency'])$(id).disabled=false;if($('phase-'+role).textContent==='推論中')$('thought-'+role).textContent='返答の生成を停止しました';phase(role,'停止');phase(1-role,'受信終了');for(const i of [0,1]){if(/^(送信中|受信中)$/.test($('delivery-'+i).textContent))$('delivery-'+i).textContent='停止';}if(error){$('error').hidden=false;$('error').textContent=error.message||String(error);}event({kind:'stopped',error:error?.message});}
 async function reading(text,mode='reading'){if(typeof text!=='string'||!text.trim()||text.length>600)throw Error('AIの返答に変換できる本文がありません');const id=String(++rid);return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);reject(Error('PCの読み変換に接続できません'));},6000);pending.set(id,{resolve,reject,timer});rpc.send(JSON.stringify({id,text,mode}));});}
 async function listen(){const generation=++epoch;try{
   role=Number($('role').value);const wpm=Number($('speed').value);if(!Number.isFinite(wpm)||wpm<=0)throw Error('WPMは正の数値を入力してください');
@@ -34,7 +34,8 @@ async function listen(){const generation=++epoch;try{
   rpc=new WebSocket('ws://127.0.0.1:18790/reading');await new Promise((resolve,reject)=>{rpc.onopen=resolve;rpc.onerror=()=>reject(Error('PC接続を確認してください'));});
   rpc.onmessage=({data})=>{const m=JSON.parse(data),p=pending.get(m.id);if(!p)return;pending.delete(m.id);clearTimeout(p.timer);m.result.error?p.reject(Error('読み変換に失敗しました')):p.resolve(m.result);};
   rpc.onclose=()=>{if(generation===epoch)stop(Error('PC接続が切れました'));};
-  const options={wpm,volume:Number($('volume').value)*.008,frequency:1800,sampleRate:48000,acoustic:true,adaptive:true,threshold:.004};
+  const frequency=Number($('frequency').value);if(![1800,18000,19000,20000,21000,22000].includes(frequency))throw Error('対応する周波数を選択してください');
+  const options={wpm,volume:Number($('volume').value)*.008,frequency:Number($('frequency').value),highFrequency:Number($('frequency').value)>4000,sampleRate:48000,acoustic:true,adaptive:true,threshold:.004};
   audio=new FastAudio({...options,phonetic:true,workletURL:new URL('./phonetic-worklet.mjs',import.meta.url).href,pcmFactory:(wire,opts)=>phoneticPcm(wire,opts)});
   const ackMs=phoneticPcm(packPhonetic({sender:role,seq:1,type:'ack',wire:ackPayload.wire}),options).seconds*1000;
   link=new ReliableMorseLink({room:'0000',session:20260912,sender:role,continuous:true,ackDelayMs:300,ackTimeoutMs:Math.min(180000,Math.ceil(ackMs+12000)),onEvent:e=>{if(generation!==epoch)return;event(e);if(e.kind==='delivered'){$('delivery-'+role).textContent='✓ 届きました';phase(role,'返答待ち');if(rxSeq!==e.seq%65534+1){messages[1-role].waiting();$('delivery-'+(1-role)).textContent='返答待ち';}}if(e.kind==='error')stop(Error(e.message));},sendAudio:async bytes=>{
@@ -56,7 +57,7 @@ async function listen(){const generation=++epoch;try{
     const raw=result.text,proposal=JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0]||'{}'),r=await reading(proposal.reply),data=parseDiscussion(raw,'ja',r.reading);readings.set(data.reply,data.phonetic);while(readings.size>16)readings.delete(readings.keys().next().value);
     $('thought-'+role).textContent=`理解 · ${data.understanding}\n着眼点 · ${data.focus}`;event({kind:'awareness',understanding:data.understanding,focus:data.focus,input:messagesIn.at(-1).content});return data.reply;
   }});
-  await audio.start(e=>{if(generation!==epoch||(audio?.job&&e.kind!=='fatal'))return;
+  const deviceInfo=await audio.start(e=>{if(generation!==epoch||(audio?.job&&e.kind!=='fatal'))return;
     if(e.kind==='symbols')chat.symbols(e.text);
     if(e.kind==='character'&&e.sender===1-role)chat.progress(e);
     if(e.kind==='header'&&e.sender===1-role){chat.bind(e.sender,e.seq,e.type);phase(role,e.type==='ack'?'ACK受信中':'受信中');phase(e.sender,e.type==='ack'?'ACK送信中':'送信中');if(e.type==='ack'&&e.seq===link.pending?.seq){rxKind='ack';acknowledgements[e.sender].begin(e.sender,e.seq,'receiving');phase(role,'ACK受信中');phase(e.sender,'ACK送信中');}else if(e.type==='data'&&e.seq===link.nextReceive){rxKind=e.stage==='checksum'?'checksum':'data';acknowledgements[e.sender].hide();}}
@@ -72,7 +73,7 @@ async function listen(){const generation=++epoch;try{
     if(e.kind==='invalid'){event(e);if(!e.candidate&&/[AB]\d+[=+]/.test(e.rawText||''))$('channel').textContent='信号を読み取れません';}
     if(e.kind==='fatal')stop(Error(e.message));
   });
-  if(generation!==epoch)return;setAwake(true);$('state').textContent='マイク受信中';phase(role,'受信待機');$('listen').disabled=true;$('stop').disabled=false;$('start').disabled=role!==0;for(const id of ['role','speed','topic'])$(id).disabled=true;event({kind:'ready',wpm,sampleRate:audio.ctx.sampleRate});
+  if(generation!==epoch)return;setAwake(true);$('state').textContent='マイク受信中';phase(role,'受信待機');$('listen').disabled=true;$('stop').disabled=false;$('start').disabled=role!==0;for(const id of ['role','speed','topic','frequency'])$(id).disabled=true;event({kind:'ready',wpm,frequency:options.frequency,...deviceInfo});
 }catch(error){stop(error);}}
 $('listen').onclick=listen;$('stop').onclick=()=>stop();$('start').onclick=()=>{$('start').disabled=true;agent.start($('topic').value).catch(error=>stop(error));};
 $('volume').oninput=()=>{if(audio)audio.options.volume=Number($('volume').value)*.008;};
