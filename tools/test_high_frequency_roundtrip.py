@@ -13,6 +13,7 @@ async def run(args):
         for p in phones:await p.prepare()
         for trial,text in enumerate(words,1):
             for i,p in enumerate(phones):await p.start(i,args.frequency,args.volume)
+            hard_failure=False
             for sender,seq in [(0,1),(1,2)]:
                 begin=time.time();failure=None;result=None
                 try:result=await phones[sender].js('signalProbe.send('+json.dumps(text,ensure_ascii=False)+','+str(seq)+').then(r=>r)')
@@ -24,10 +25,14 @@ async def run(args):
                 match=len(received)==1 and received[0]['text']==text and any(f['text']=='じゅしんしました' for f in acks)
                 entry={'trial':trial,'sender':sender,'seq':seq,'text':text,'delivered':bool(result and result.get('delivered') and match),'attempts':result.get('attempts') if result else None,'receivedCount':len(received),'ackTexts':[f['text'] for f in acks],'error':failure,'seconds':time.time()-begin}
                 report['trials'].append(entry);save();print(json.dumps(entry,ensure_ascii=False),flush=True)
+                hard_failure|=not entry['delivered']
                 (out/f'trial-{trial}-{sender}.json').write_text(json.dumps(snapshots,ensure_ascii=False),encoding='utf-8')
             for p in phones:await p.stop()
+            if hard_failure:break
         report['directions']=[{'sender':i,'firstAttempt':sum(t['delivered'] and t['attempts']==1 for t in report['trials'] if t['sender']==i),'delivered':sum(t['delivered'] for t in report['trials'] if t['sender']==i)} for i in [0,1]]
-        report['status']='PASS' if all(d['firstAttempt']>=9 and d['delivered']==10 for d in report['directions']) else 'FAIL';save();print(json.dumps(report['directions']),report['status'],flush=True)
+        report['status']='PASS' if all(d['firstAttempt']>=9 and d['delivered']==10 for d in report['directions']) else 'FAIL'
+        if report['status']=='FAIL' and len(report['trials'])<20:report['termination']='Stopped after a failed delivery made 10/10 mathematically impossible.'
+        save();print(json.dumps(report['directions']),report['status'],flush=True)
     except Exception as e:report['status']='ERROR';report['error']=str(e);save();raise
     finally:
         for p in phones:
