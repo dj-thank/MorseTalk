@@ -7,11 +7,13 @@ import {discussionPrompt,parseDiscussion} from '../core/discussion.mjs';
 import {InlineMessage} from '/monitor/inline-message.mjs';
 import {AckMessage} from '/monitor/ack-message.mjs';
 import {nativeCall,setAwake} from './voice.mjs';
-import {encodeText,codeToSegments,durationOf} from '../core/morse.mjs';
+import {encodeText,codeToSegments,durationOf,SIGNAL_FREQUENCIES,DEFAULT_SIGNAL_FREQUENCY} from '../core/morse.mjs';
 const $=id=>document.getElementById(id),messages=[0,1].map(i=>new InlineMessage($('message-'+i)));
 const acknowledgements=[0,1].map(i=>new AckMessage($('message-'+i)));let txKind=null,rxKind=null,txAttempt=0;
 const chat=new SignalChat($('chat'));
 const ackPayload=kanaToWire('じゅしんしました');
+const standard=document.createElement('option');standard.value=String(DEFAULT_SIGNAL_FREQUENCY);standard.textContent='1.8 kHz';$('frequency').append(standard);
+const experimental=document.createElement('optgroup');experimental.label='高周波・実験';for(const value of SIGNAL_FREQUENCIES.slice(1)){const option=document.createElement('option');option.value=String(value);option.textContent=`${value/1000} kHz`;experimental.append(option);}$('frequency').append(experimental);
 const settings=['role','speed','volume','topic','frequency'];
 for(const id of settings){try{const value=localStorage.getItem('signal-'+id);if(value!==null)$(id).value=value;}catch{}}
 let audio,link,agent,rpc,role=0,epoch=0,rid=0,rxSeq=null;const pending=new Map(),readings=new Map(),events=[],logRows=new Map();
@@ -34,7 +36,7 @@ async function listen(){const generation=++epoch;try{
   rpc=new WebSocket('ws://127.0.0.1:18790/reading');await new Promise((resolve,reject)=>{rpc.onopen=resolve;rpc.onerror=()=>reject(Error('PC接続を確認してください'));});
   rpc.onmessage=({data})=>{const m=JSON.parse(data),p=pending.get(m.id);if(!p)return;pending.delete(m.id);clearTimeout(p.timer);m.result.error?p.reject(Error('読み変換に失敗しました')):p.resolve(m.result);};
   rpc.onclose=()=>{if(generation===epoch)stop(Error('PC接続が切れました'));};
-  const frequency=Number($('frequency').value);if(![1800,18000,19000,20000,21000,22000].includes(frequency))throw Error('対応する周波数を選択してください');
+  const frequency=Number($('frequency').value);if(!SIGNAL_FREQUENCIES.includes(frequency))throw Error('対応する周波数を選択してください');
   const options={wpm,volume:Number($('volume').value)*.008,frequency:Number($('frequency').value),highFrequency:Number($('frequency').value)>4000,sampleRate:48000,acoustic:true,adaptive:true,threshold:.004};
   audio=new FastAudio({...options,phonetic:true,workletURL:new URL('./phonetic-worklet.mjs',import.meta.url).href,pcmFactory:(wire,opts)=>phoneticPcm(wire,opts)});
   const ackMs=phoneticPcm(packPhonetic({sender:role,seq:1,type:'ack',wire:ackPayload.wire}),options).seconds*1000;

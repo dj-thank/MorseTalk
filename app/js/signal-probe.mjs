@@ -5,10 +5,11 @@ import {FastAudio} from './fast-audio.mjs';
 import {phoneticPcm,packPhonetic,kanaToWire} from '../core/phonetic-morse.mjs';
 import {ReliableMorseLink} from '../core/fast-link.mjs';
 import {unpackFastFrame} from '../core/fast-codec.mjs';
+import {SIGNAL_FREQUENCIES} from '../core/morse.mjs';
 import {setAwake} from './voice.mjs';
 
 export async function createSignalProbe({role,frequency,volume=20,wpm=20,session=20260913}){
- if(![0,1].includes(role)||![1800,18000,19000,20000,21000,22000].includes(frequency)||![20,40,60].includes(volume))throw Error('試験設定が不正です');
+ if(![0,1].includes(role)||!SIGNAL_FREQUENCIES.includes(frequency)||![20,40,60].includes(volume))throw Error('試験設定が不正です');
  const events=[];let closed=false;
  const record=e=>{events.push({t:Date.now(),...e});if(events.length>6000)events.shift();};
  const options={wpm,frequency,highFrequency:frequency>4000,diagnostics:true,volume:volume*.008,sampleRate:48000,acoustic:true};
