@@ -18,3 +18,14 @@
 .air{position:sticky;top:0;z-index:3;background:var(--panel)}
 .air .awareness{max-height:96px;overflow:auto}
 @media(max-width:760px){.air #strip{height:44px}.air .lane-head .who{width:30px;height:30px;font-size:18px}}
+.next-step{font-size:14px;line-height:1.65;color:var(--ink);margin:12px 0}
+.connection-help{font-size:13px;line-height:1.7;color:var(--muted);margin-bottom:16px}
+.connection-help summary{cursor:pointer;padding:10px 0;color:var(--ink)}
+.connection-help ol{padding-left:22px}.connection-help li+li{margin-top:6px}
+.chat-empty{color:var(--muted);font-size:15px;line-height:1.7;text-align:center;padding:24px 8px}
+.conversation-bar button{min-height:44px}.conversation-bar button:disabled{opacity:.5;cursor:default}
+#listen:disabled,#start:disabled{display:inline-block}
+#error:not([hidden]){border:1px solid var(--rose);border-radius:10px;padding:12px;line-height:1.65}
+:is(button,input,select,a,summary):focus-visible{outline:2px solid var(--amber);outline-offset:3px}
+@media(max-width:480px){.top{flex-wrap:wrap;gap:10px}.conversation-bar{gap:10px}.conversation-bar button{flex:1;white-space:normal}#stop{flex:0 0 auto}.air{position:static}.chat-message{width:94%}}
+@media(max-width:400px){#listen{flex-basis:100%}#stop{flex:1}}

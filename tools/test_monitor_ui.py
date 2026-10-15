@@ -3,13 +3,13 @@
 Telemetry in these tests is explicitly synthetic. No LLM or physical audio claim.
 Run against an owned monitor_server.py --port 18790 instance.
 """
-import argparse,json
+import argparse,json,os,shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright,expect
 
 p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:18790');p.add_argument('--case',default='all');args=p.parse_args()
 with sync_playwright() as pw:
-    browser=pw.chromium.launch(channel='msedge',args=['--mute-audio'])
+    browser=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or shutil.which('chromium'),args=['--mute-audio'])
     page=browser.new_page(viewport={'width':1440,'height':1100});errors=[]
     page.on('pageerror',lambda e:errors.append(str(e)))
     page.goto(args.url);page.wait_for_function("document.getElementById('chip-hub').classList.contains('on')")

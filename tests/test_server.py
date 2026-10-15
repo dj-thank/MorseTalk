@@ -41,13 +41,13 @@ class LocalHTTPTests(unittest.TestCase):
     def test_root_injects_per_run_token(self):
         code,h,b=self.request('GET','/');self.assertEqual(code,200);self.assertIn(self.s.token.encode(),b);self.assertNotIn(b'__MORSETALK_TOKEN__',b);self.assertEqual(h['Cache-Control'],'no-store');self.assertIn("frame-ancestors 'none'",h['Content-Security-Policy'])
     def test_modules_correct_mime(self):
-        for p in ['/js/app.mjs','/core/morse.mjs','/js/rx-worklet.mjs']:
+        for p in ['/js/app.mjs','/core/morse.mjs','/app/core/phonetic-morse.mjs','/js/rx-worklet.mjs','/monitor/inline-message.mjs','/monitor/ack-message.mjs']:
             code,h,_=self.request('GET',p);self.assertEqual(code,200);self.assertIn('javascript',h['Content-Type'])
     def test_static_does_not_expose_source_server(self):
         for p in ['/server.py','/windows/server.ps1','/.git/config','/models/model.bin']:
             self.assertEqual(self.request('GET',p)[0],404)
     def test_traversal_rejected(self):
-        for p in ['/../server.py','/%2e%2e/server.py','/..%5cserver.py','/%00','/core/../../server.py']:
+        for p in ['/../server.py','/%2e%2e/server.py','/..%5cserver.py','/%00','/core/../../server.py','/monitor/../server.py','/monitor/%2e%2e/server.py']:
             self.assertIn(self.request('GET',p)[0],(400,404))
     def test_dns_rebinding_host(self): self.assertEqual(self.request('GET','/',headers={'Host':'attacker.example'})[0],403)
     def test_cross_site(self): self.assertEqual(self.request('GET','/',headers={'Sec-Fetch-Site':'cross-site'})[0],403)

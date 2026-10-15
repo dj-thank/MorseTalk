@@ -1,10 +1,10 @@
-import asyncio
+import asyncio,os,shutil
 from pathlib import Path
 from playwright.async_api import async_playwright
 ROOT=Path(__file__).resolve().parents[1]
 async def main():
     async with async_playwright() as p:
-        browser=await p.chromium.launch(channel='msedge',headless=True,args=['--mute-audio'])
+        browser=await p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or shutil.which('chromium'),headless=True,args=['--mute-audio'])
         page=await browser.new_page(viewport={'width':412,'height':915})
         async def serve(route):
             path=route.request.url.split('http://signal.test/')[1]

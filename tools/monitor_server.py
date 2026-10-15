@@ -151,17 +151,26 @@ class Hub:
         if path == '/reading':
             async for raw in ws:
                 if not isinstance(raw,str) or len(raw)>4000:continue
-                request=json.loads(raw)
+                try:
+                    request=json.loads(raw)
+                except (ValueError, TypeError):
+                    continue
                 if not isinstance(request,dict):continue
                 if not isinstance(request.get('text'),str) or not 0<len(request['text'])<=600:
                     await ws.send(json.dumps({'id':request.get('id'),'result':{'error':'Reading text must contain 1-600 characters'}}));continue
-                process=await asyncio.create_subprocess_exec(os.environ.get('MORSETALK_READING_PYTHON',sys.executable),'-X','utf8',str(ROOT/'tools/japanese_reading.py'),stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL)
+                process=None
                 try:
+                    process=await asyncio.create_subprocess_exec(os.environ.get('MORSETALK_READING_PYTHON',sys.executable),'-X','utf8',str(ROOT/'tools/japanese_reading.py'),stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL)
                     body=json.dumps({'text':request['text'],'mode':'format' if request.get('mode')=='format' else 'reading'}).encode('utf-8')
                     output,_=await asyncio.wait_for(process.communicate(body),5)
-                    await ws.send(json.dumps({'id':request.get('id'),'result':json.loads(output)}))
+                    result=json.loads(output)
+                    if process.returncode != 0 or not isinstance(result,dict):
+                        raise ValueError('Invalid reading result')
+                except (OSError, ValueError, asyncio.TimeoutError):
+                    result={'error':'Reading service unavailable'}
                 finally:
-                    if process.returncode is None:process.kill();await process.wait()
+                    if process and process.returncode is None:process.kill();await process.wait()
+                await ws.send(json.dumps({'id':request.get('id'),'result':result}))
         elif path == '/feed':
             await self.feed(ws)
         elif path == '/view':

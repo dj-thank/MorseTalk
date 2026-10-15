@@ -3,10 +3,11 @@ import {InlineMessage} from '/monitor/inline-message.mjs';
 /** Each bubble belongs to one locally observed packet, never to a peer UI. */
 export class SignalChat {
   constructor(root){this.root=root;this.reset(0);}
-  reset(role){this.role=role;this.rows=new Map();this.current=null;this.raw=null;this.root.replaceChildren();}
+  reset(role){this.role=role;this.rows=new Map();this.current=null;this.raw=null;this.root.replaceChildren();this.empty=document.createElement('p');this.empty.className='chat-empty';this.empty.textContent='受信した言葉と送った言葉が、ここに並びます。';this.root.append(this.empty);}
   row(sender,seq,type='data'){
     const key=`${sender}:${seq}:${type}`;
     if(this.rows.has(key))return this.rows.get(key);
+    this.empty?.remove();
     const nearBottom=window.innerHeight+window.scrollY>=document.body.scrollHeight-160;
     const node=document.createElement('article');node.className='chat-message';node.dataset.self=String(sender===this.role);node.dataset.sender=sender;
     const heading=document.createElement('header');heading.textContent=`端末 ${sender?'B':'A'}${sender===this.role?' · あなた':''} · ${type==='ack'?'受信確認 ACK':'メッセージ'}`;
@@ -30,7 +31,7 @@ export class SignalChat {
         row.node.insertBefore(this.raw,row.status);
       }
     }else if(this.raw?.dataset.packet&&this.current?.complete)this.raw=null;
-    if(!this.raw){this.raw=document.createElement('div');this.raw.className='chat-signal';this.raw.textContent='受信中';this.root.append(this.raw);}
+    if(!this.raw){this.empty?.remove();this.root.querySelectorAll(':scope > .chat-signal').forEach(node=>node.remove());this.raw=document.createElement('div');this.raw.className='chat-signal';this.raw.textContent='受信中';this.root.append(this.raw);}
     const previous=this.raw.dataset.latest||'';
     if(previous&&!text.startsWith(previous.trimEnd()))this.raw.dataset.completed=(this.raw.dataset.completed||'')+previous+' ｜ ';
     this.raw.dataset.latest=text;

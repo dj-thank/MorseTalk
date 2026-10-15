@@ -16,6 +16,7 @@ test-results/*.wav
 
 dist/
 examples/*.wav
+examples/settings.json
 test-results/
 verification/
 *.apk

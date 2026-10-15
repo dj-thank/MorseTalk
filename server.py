@@ -219,8 +219,14 @@ class Handler(BaseHTTPRequestHandler):
             if "\x00" in decoded or "\\" in decoded or ".." in decoded.split("/") or len(decoded) > 2048:
                 raise ValueError("invalid path")
             relative = "index.html" if decoded == "/" else decoded.lstrip("/")
-            target = (APP / relative).resolve()
-            if not target.is_relative_to(APP.resolve()) or not target.is_file() or target.suffix not in MIME:
+            # Monitor modules share the same core path as packaged Android assets.
+            if relative.startswith('app/core/'):
+                relative = relative[len('app/'):]
+            static_root = APP.parent / 'monitor' if relative.startswith('monitor/') else APP
+            if relative.startswith('monitor/'):
+                relative = relative[len('monitor/'):]
+            target = (static_root / relative).resolve()
+            if not target.is_relative_to(static_root.resolve()) or not target.is_file() or target.suffix not in MIME:
                 self.json_response(404, {"error": "Not found"})
                 return
             data = target.read_bytes()

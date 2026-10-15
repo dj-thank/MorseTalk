@@ -43,6 +43,12 @@ public final class SmokeInstrumentation extends Instrumentation {
             if(signalOnly){
                 require("document.documentElement.scrollWidth<=innerWidth","Signal screen horizontal overflow");
                 require("!!window.NativeBridge && typeof NativeBridge.request==='function'","Signal native bridge missing");
+                js("document.querySelector('#topic').value=' ';document.querySelector('#listen').click();true");
+                require("document.querySelector('#error').textContent.includes('話題を入力') && !document.querySelector('#listen').disabled && !document.querySelector('#role').disabled","Signal invalid topic did not recover controls");
+                check("Signal rejects an empty topic before connecting and restores controls",true);
+                js("document.querySelector('#topic').value='音楽';document.querySelector('#listen').click();window.signalPreparing=document.querySelector('#listen').disabled && !document.querySelector('#stop').disabled;document.querySelector('#stop').click();true");
+                require("window.signalPreparing && document.querySelector('#state').textContent==='停止' && !document.querySelector('#listen').disabled && !morsetalkSignalSnapshot().active","Signal preparation cannot be cancelled");
+                check("Signal connection preparation can be stopped in the installed WebView",true);
                 js("window.workletProbe=null;(async()=>{let c;try{c=new AudioContext({sampleRate:48000});await c.audioWorklet.addModule('/js/phonetic-worklet.mjs');const n=new AudioWorkletNode(c,'morsetalk-fast-input',{processorOptions:{wpm:20,frequency:1800}});n.port.postMessage({kind:'stop'});n.disconnect();window.workletProbe='ok';}catch(e){window.workletProbe=String(e);}finally{if(c)await c.close();}})();true");
                 waitJs("window.workletProbe!==null",20000);require("window.workletProbe==='ok'","Signal AudioWorklet failed");
                 check("Signal layout, native bridge and acoustic receiver module",true);
