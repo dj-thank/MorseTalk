@@ -1,5 +1,15 @@
 # Changelog
 
+## 未リリース — 2026-10-15
+
+- Signalの接続準備中に停止でき、重複開始と古い非同期処理による再接続の破壊を防止。
+- 読み変換の接続・処理に期限を設け、失敗時に再試行方法を表示。背景移動でも停止。
+- 初期案内、空状態、接続手順、44pxの操作領域、狭幅画面の配置を改善。
+- PCサーバーでSignalの共通CSS／モジュールを配信。
+- 表示用タイミング計算の不要なPCM生成と、受信文の二重読み変換を除去。
+- Monitorの停止後の遅延開始と旧接続のイベントを遮断。読み変換失敗をリクエスト単位に分離。
+- 回帰テストを追加。範囲と結果は `docs/IMPROVEMENT-2026-10-15.md`。
+
 ## 0.6.0
 - Add a 60 WPM "over the air" MT2 speed for real phone speaker/microphone links (120 WPM units are 10 ms and did not decode between two physical Pixels).
 - Add tools/phone_pair.py to drive two USB/Wi-Fi ADB phones through the local relay.

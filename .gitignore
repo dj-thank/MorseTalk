@@ -5,6 +5,7 @@ node_modules/
 __pycache__/
 *.pyc
 android/.gradle/
+android/.kotlin/
 android/local.properties
 android/**/build/
 *.jks
@@ -16,6 +17,7 @@ test-results/*.wav
 
 dist/
 examples/*.wav
+examples/settings.json
 test-results/
 verification/
 *.apk

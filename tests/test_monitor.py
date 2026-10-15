@@ -1,5 +1,6 @@
 """Loopback monitor state and bounded-history regressions; no actual model."""
-import json,unittest
+import json,unittest,asyncio
+from unittest.mock import AsyncMock,patch
 from types import SimpleNamespace
 from websockets.datastructures import Headers
 from tools.monitor_server import Hub,static_response
@@ -12,6 +13,19 @@ class Feed:
         except StopIteration:raise StopAsyncIteration
 
 class MonitorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_reading_process_does_not_disconnect_next_request(self):
+        class ReadingSocket(Feed):
+            request=SimpleNamespace(path='/reading')
+            async def send(self,text):self.responses.append(json.loads(text))
+        for failure in (OSError('missing runtime'),ValueError('invalid output'),asyncio.TimeoutError()):
+            with self.subTest(failure=type(failure).__name__):
+                ws=ReadingSocket(['invalid JSON','null',json.dumps({'id':'bad','text':'音'}),json.dumps({'id':'next','text':'楽'})]);ws.responses=[]
+                process=SimpleNamespace(returncode=0,communicate=AsyncMock(return_value=(b'{"reading":"ok"}',b'')))
+                with patch('tools.monitor_server.asyncio.create_subprocess_exec',AsyncMock(side_effect=[failure,process])):
+                    await Hub().handler(ws)
+                self.assertEqual([r['id'] for r in ws.responses],['bad','next'])
+                self.assertIn('error',ws.responses[0]['result'])
+                self.assertEqual(ws.responses[1]['result']['reading'],'ok')
     async def test_missing_reading_text_returns_error_instead_of_timing_out(self):
         class ReadingSocket(Feed):
             request=SimpleNamespace(path='/reading')

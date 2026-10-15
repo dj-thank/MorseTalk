@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {kanaToWire,wireToKana,packPhonetic,unpackPhonetic,phoneticPcm,PhoneticDecoder} from '../app/core/phonetic-morse.mjs';
+import {kanaToWire,wireToKana,packPhonetic,unpackPhonetic,phoneticPcm,phoneticSegments,PhoneticDecoder} from '../app/core/phonetic-morse.mjs';
 test('WA is actual payload for わ; incomplete syllables wait for received letters',()=>{
   assert.equal(kanaToWire('わたし').wire,'WA TA SHI');
   assert.equal(wireToKana('W',{partial:true}).text,'');
@@ -32,4 +32,14 @@ test('Arbitrary fast tempo is generated at the requested rate and decoding failu
   const frames=[],errors=[];const d=new PhoneticDecoder({wpm:600,onFrame:f=>frames.push(f),onError:(message,observed)=>errors.push({message,observed})});
   for(let i=0;i<fast.pcm.length;i+=128)d.push(fast.pcm.subarray(i,i+128));
   assert.equal(frames.length,0);assert.ok(errors.length>0);assert.equal(typeof errors[0].observed.rawText,'string');
+});
+
+test('Display timing uses the same acoustic segments without allocating PCM',()=>{
+  const wire=packPhonetic({sender:1,seq:1,type:'ack',wire:'JU SHI N SHI MA SHI TA'});
+  for(const acoustic of [false,true])for(const wpm of [20,60,80.1]){
+    const plan=phoneticSegments(wire,{acoustic,wpm}),audio=phoneticPcm(wire,{acoustic,wpm});
+    assert.deepEqual(plan.segments,audio.segments);assert.equal(plan.pcm,undefined);
+    const seconds=plan.segments.reduce((n,s)=>n+s.seconds,0);
+    assert.ok(Math.abs(seconds-audio.seconds)<2/48000);
+  }
 });

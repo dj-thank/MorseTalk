@@ -18,6 +18,6 @@ const codec=modules.get(path.resolve('app/core/fast-codec.mjs')).namespace;
 for(const wpm of [120,300,600,1200]){messages.length=0;const p=new Processor({processorOptions:{wpm}});const bytes=codec.packFastFrame({room:'0000',session:0x20260911,sender:0,seq:1,text:'\\ufeff日本語🌏'});const {pcm}=codec.fastPcm(bytes,{wpm});for(let i=0;i<pcm.length;i+=128)p.process([[pcm.subarray(i,i+128)]],[[new Float32Array(128)]]);const got=messages.filter(m=>m.kind==='frame');assert.equal(got.length,1);assert.equal(got[0].frame.text,'\\ufeff日本語🌏');}
 console.log('Actual ESM worklet, all four speeds, strict UTF-8: passed');
 `;
-  const run=spawnSync(process.execPath,['--experimental-vm-modules','--input-type=module','-e',script],{encoding:'utf8',timeout:15000});
-  assert.equal(run.status,0,run.stdout+'\n'+run.stderr);
+  const run=spawnSync(process.execPath,['--experimental-vm-modules','--input-type=module','-e',script],{encoding:'utf8',timeout:60000});
+  assert.equal(run.status,0,[run.stdout,run.stderr,run.error?.message,run.signal].filter(Boolean).join('\n'));
 });

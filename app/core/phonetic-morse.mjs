@@ -45,9 +45,15 @@ export function unpackPhonetic(text,language='ja'){
   const result={sender:m[1]==='B'?1:0,seq:Number(m[2]),type,wire,text:language==='ja'?wireToKana(wire).text:wire};
   if(packPhonetic(result)!==text)throw Error('フレーム表現が不正です。');return result;
 }
+export function phoneticSegments(wire,{wpm=60,acoustic=false}={}){
+  const code=encodeText(wire).code,body=codeToSegments(code,wpm,{experimental:true});
+  const lead=acoustic?[{on:true,seconds:.25},{on:false,seconds:1.1},...codeToSegments(encodeText('VVV').code,wpm,{experimental:true}).slice(0,-1),{on:false,seconds:8*1.2/wpm}]:[];
+  return {code,body,lead,segments:[...lead,...body]};
+}
 export function phoneticPcm(wire,{wpm=60,sampleRate=48000,frequency=700,volume=.24,acoustic=false}={}){
-  const code=encodeText(wire).code,segments=codeToSegments(code,wpm,{experimental:true}),pcm=synthesize(segments,{sampleRate,frequency,volume,experimental:true});
-  if(acoustic){const lead=[{on:true,seconds:.25},{on:false,seconds:1.1},...codeToSegments(encodeText('VVV').code,wpm,{experimental:true}).filter((_,i,a)=>i<a.length-1),{on:false,seconds:8*1.2/wpm}],preamble=synthesize(lead,{sampleRate,frequency,volume,experimental:true}),joined=new Float32Array(preamble.length+pcm.length);joined.set(preamble);joined.set(pcm,preamble.length);return {pcm:joined,sampleRate,segments:[...lead,...segments],code,seconds:joined.length/sampleRate};}
+  const {code,body,lead,segments}=phoneticSegments(wire,{wpm,acoustic}),pcm=synthesize(body,{sampleRate,frequency,volume,experimental:true});
+  // Keep the existing preamble/body sample rounding and phase exactly intact.
+  if(acoustic){const preamble=synthesize(lead,{sampleRate,frequency,volume,experimental:true}),joined=new Float32Array(preamble.length+pcm.length);joined.set(preamble);joined.set(pcm,preamble.length);return {pcm:joined,sampleRate,segments,code,seconds:joined.length/sampleRate};}
   return {pcm,sampleRate,segments,code,seconds:pcm.length/sampleRate};
 }
 export class PhoneticDecoder {
