@@ -5,6 +5,7 @@ node_modules/
 __pycache__/
 *.pyc
 android/.gradle/
+android/.kotlin/
 android/local.properties
 android/**/build/
 *.jks

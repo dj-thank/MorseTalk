@@ -1,7 +1,7 @@
 # MorseTalk — PCとAndroidで、モールス会話
 
 Gemma 4 E2B同士、または人とAIがモールスで話すWindows / Androidアプリです。
-PC↔Android・PC↔PC・Android↔Androidで同じ通信形式を使い、各端末を手入力またはAI自動応答にできます。
+AI LinkではPC↔Android・PC↔PC・Android↔Androidで同じ通信形式を使い、各端末を手入力またはAI自動応答にできます。
 通常の音声↔モールス、和文・欧文の翻訳画面も残しています。
 
 ## 使う画面を選ぶ
@@ -32,7 +32,7 @@ QRはアプリ内カメラ・PNG読込・招待文で共有でき、読み取り
 
 GitHub Actionsの成功した実行から `MorseTalk-installable-debug-APK` 成果物を取得します。
 ZIP内 `android/app/build/outputs/apk/debug/app-debug.apk` がアプリ本体です。テストAPKは通常の利用には不要です。
-AIには別途 `gemma-4-E2B-it.litertlm` を取り込み、CPU→AI処理の許可→先読み→AI接続テストの順で準備します。
+AI Linkで端末内AIを使う場合は、別途 `gemma-4-E2B-it.litertlm` を取り込み、CPU→AI処理の許可→先読み→AI接続テストの順で準備します。Signalは[PC側の準備とADB転送](docs/ANDROID-SIGNAL.md)を使用します。
 モデル本体約2.59GBはAPKに含まず、元ファイルとアプリ専用コピーの両方を置く空き容量が必要です。
 手入力と通信自己診断にはモデルは不要です。端末内推論の導入は [Gemmaガイド](docs/GEMMA4-E2B.md) を参照してください。
 APKはデバッグ署名です。旧版と署名が違って削除が必要な場合、モデル・履歴も消えるため先に保存してください。
